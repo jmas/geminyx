@@ -1,0 +1,82 @@
+import type {
+  BaseRecord,
+  CrudFilter,
+  GetListParams,
+  GetOneParams,
+  UpdateParams,
+  UpdateResponse,
+} from "@refinedev/core";
+import type { Account } from "lib/models/account";
+import type { SqliteResourceAdapter } from "lib/sqlite/resourceAdapterTypes";
+import {
+  fetchAccount,
+  fetchAccounts,
+  patchAccount,
+} from "lib/sqlite/queries";
+
+export const RESOURCE = "accounts" as const;
+
+export type { Account } from "lib/models/account";
+
+function eqFilterValue(
+  filters: CrudFilter[] | undefined,
+  field: string,
+): unknown {
+  if (!filters?.length) return undefined;
+  for (const f of filters) {
+    if ("field" in f && f.field === field && f.operator === "eq") {
+      const v = f.value;
+      if (Array.isArray(v)) {
+        return v[0];
+      }
+      return v;
+    }
+  }
+  return undefined;
+}
+
+function activeOnlyFromFilters(
+  filters: CrudFilter[] | undefined,
+): boolean | undefined {
+  const v = eqFilterValue(filters, "is_active");
+  if (v === undefined) return undefined;
+  if (typeof v === "boolean") return v;
+  if (v === "true" || v === 1 || v === "1") return true;
+  if (v === "false" || v === 0 || v === "0") return false;
+  return undefined;
+}
+
+type AccountUpdateVariables = Partial<
+  Pick<Account, "name" | "email" | "avatarUrl" | "capsuleUrl" | "isActive">
+>;
+
+export const sqliteAdapter: SqliteResourceAdapter = {
+  async getList<TData extends BaseRecord>({ filters }: GetListParams) {
+    const activeOnly = activeOnlyFromFilters(filters);
+    const rows = await fetchAccounts(
+      activeOnly === undefined ? {} : { activeOnly },
+    );
+    return {
+      data: rows as unknown as TData[],
+      total: rows.length,
+    };
+  },
+  async getOne<TData extends BaseRecord>({ id }: GetOneParams) {
+    const row = await fetchAccount(String(id));
+    if (!row) {
+      throw { message: "Account not found", statusCode: 404 };
+    }
+    return { data: row as unknown as TData };
+  },
+  async update<TData extends BaseRecord, TVariables = unknown>({
+    id,
+    variables,
+  }: UpdateParams<TVariables>): Promise<UpdateResponse<TData>> {
+    await patchAccount(String(id), variables as AccountUpdateVariables);
+    const row = await fetchAccount(String(id));
+    if (!row) {
+      throw { message: "Account not found", statusCode: 404 };
+    }
+    return { data: row as unknown as TData };
+  },
+};
