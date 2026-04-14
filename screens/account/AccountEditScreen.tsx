@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 import type { FormikHelpers } from "formik";
 import { router } from "expo-router";
 import { useCallback, useLayoutEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Alert,
   Platform,
@@ -24,6 +25,7 @@ import { alertError } from "utils/error";
 const ACCOUNT_EDIT_DELETE_ICON_SIZE = 22;
 
 export function AccountEditScreen() {
+  const { t } = useTranslation();
   const navigation = useNavigation();
   const scheme = useColorScheme();
 
@@ -48,7 +50,7 @@ export function AccountEditScreen() {
     },
     onError: (e) => {
       console.error("AccountEditScreen delete failed", e);
-      alertError(e, "Could not delete account.", "Could not delete account");
+      alertError(e, t("accountEdit.errorDelete"), t("accountEdit.errorDelete"));
     },
   });
 
@@ -64,12 +66,12 @@ export function AccountEditScreen() {
   const handleDelete = useCallback(() => {
     if (!activeAccount) return;
     Alert.alert(
-      "Delete account?",
-      "This removes the account from this device. It does not affect any remote servers.",
+      t("accountEdit.deleteTitle"),
+      t("accountEdit.deleteMsg"),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Delete",
+          text: t("common.delete"),
           style: "destructive",
           onPress: () => {
             void deleteMutation.mutateAsync(activeAccount.id);
@@ -77,7 +79,7 @@ export function AccountEditScreen() {
         },
       ],
     );
-  }, [activeAccount, deleteMutation]);
+  }, [activeAccount, deleteMutation, t]);
 
   useLayoutEffect(() => {
     if (!activeAccount) {
@@ -93,7 +95,7 @@ export function AccountEditScreen() {
         <HeaderButton
           onPress={handleDelete}
           disabled={deleteMutation.isPending}
-          accessibilityLabel="Delete account"
+          accessibilityLabel={t("accountEdit.deleteA11y")}
         >
           <Ionicons
             name="trash-outline"
@@ -108,7 +110,7 @@ export function AccountEditScreen() {
         </HeaderButton>
       ),
     });
-  }, [activeAccount, deleteMutation.isPending, handleDelete, navigation]);
+  }, [activeAccount, deleteMutation.isPending, handleDelete, navigation, t]);
 
   const handleSubmit = useCallback(
     async (
@@ -125,19 +127,19 @@ export function AccountEditScreen() {
         router.back();
       } catch (e) {
         console.error("AccountEditScreen update failed", e);
-        alertError(e, "Could not save account.", "Could not save account");
+        alertError(e, t("accountEdit.errorSave"), t("accountEdit.errorSave"));
       } finally {
         setSubmitting(false);
       }
     },
-    [activeAccount],
+    [activeAccount, t],
   );
 
   if (isLoadingAccount) {
     return (
       <View style={[styles.screen, { backgroundColor: formPalette.background }]}>
         <Text style={[styles.loadingText, { color: formPalette.textSecondary }]}>
-          Loading…
+          {t("accountEdit.loading")}
         </Text>
       </View>
     );
@@ -149,7 +151,7 @@ export function AccountEditScreen() {
         <Text style={[styles.loadingText, { color: formPalette.error }]}>
           {loadError instanceof Error
             ? loadError.message
-            : "Could not load account."}
+            : t("accountEdit.loadError")}
         </Text>
       </View>
     );
@@ -159,7 +161,7 @@ export function AccountEditScreen() {
     return (
       <View style={[styles.screen, { backgroundColor: formPalette.background }]}>
         <Text style={[styles.loadingText, { color: formPalette.textSecondary }]}>
-          No active account to edit.
+          {t("accountEdit.noAccount")}
         </Text>
       </View>
     );
@@ -170,7 +172,7 @@ export function AccountEditScreen() {
       <AccountForm
         palette={formPalette}
         initialValues={initialValues}
-        submitLabel="Save changes"
+        submitLabel={t("accountEdit.submit")}
         onSubmit={handleSubmit}
       />
     </View>

@@ -1,4 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
+import type { TFunction } from "i18next";
 import {
   forwardRef,
   useCallback,
@@ -100,16 +101,23 @@ const BLOB_REF_BODY = /^\[blob: ([^\]]+)\]$/;
 /** Pixels from the bottom of content to still count as "at bottom" (Telegram-like). */
 const NEAR_BOTTOM_THRESHOLD_PX = 80;
 
-function statusFallbackText(status: number): string {
-  if (status === 10) return "Input requested.";
-  if (status === 11) return "Sensitive input requested.";
-  if (status === 20) return "Success (empty response).";
-  if (status === 30 || status === 31) return `Redirect (${status}).`;
-  if (status >= 40 && status <= 49) return `Temporary failure (${status}).`;
-  if (status >= 50 && status <= 59) return `Permanent failure (${status}).`;
-  if (status >= 60 && status <= 69)
-    return `Client certificate required (${status}).`;
-  return `Response status ${status}.`;
+function statusFallbackText(status: number, t: TFunction): string {
+  if (status === 10) return t("messageList.statusInputRequested");
+  if (status === 11) return t("messageList.statusSensitiveInputRequested");
+  if (status === 20) return t("messageList.statusSuccessEmpty");
+  if (status === 30 || status === 31) {
+    return t("messageList.statusRedirect", { code: status });
+  }
+  if (status >= 40 && status <= 49) {
+    return t("messageList.statusTemporaryFailure", { code: status });
+  }
+  if (status >= 50 && status <= 59) {
+    return t("messageList.statusPermanentFailure", { code: status });
+  }
+  if (status >= 60 && status <= 69) {
+    return t("messageList.statusClientCertRequired", { code: status });
+  }
+  return t("messageList.statusGeneric", { status });
 }
 
 type ViewFullMessageContext = {
@@ -209,7 +217,7 @@ function MessageBubble({
       : metaTrim.length > 0
         ? metaTrim
         : message.status !== undefined
-          ? statusFallbackText(message.status)
+          ? statusFallbackText(message.status, t)
           : "";
   const displayBodyTrim = displayBody.trim();
   const blobRefMatch = BLOB_REF_BODY.exec(bodyTrim);
@@ -339,7 +347,7 @@ function MessageBubble({
             <Text
               style={[styles.viewFullBtnLabel, { color: palette.viewFullBtnLabel }]}
             >
-              Read more
+              {t("messageList.readMore")}
             </Text>
           </Pressable>
         ) : null}
@@ -367,6 +375,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
     },
     ref,
   ) {
+    const { t } = useTranslation();
     const listRef = useRef<ScrollView | null>(null);
     const initialScrollDoneRef = useRef(false);
     const sawScrollBelowTopRef = useRef(false);
@@ -589,7 +598,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
         {showScrollToBottom ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Scroll to bottom"
+            accessibilityLabel={t("messageList.a11yScrollToBottom")}
             onPress={onScrollToBottomPress}
             style={({ pressed }) => [
               styles.scrollToBottomFab,

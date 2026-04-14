@@ -6,6 +6,7 @@ import {
 } from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Ionicons } from "@expo/vector-icons";
 import {
   ActivityIndicator,
@@ -57,6 +58,7 @@ function AudioBlobPlayer({
   accentColor: ColorValue;
   trackBgColor: ColorValue;
 }) {
+  const { t } = useTranslation();
   const soundRef = useRef<Audio.Sound | null>(null);
   const trackWidthRef = useRef(0);
   const [phase, setPhase] = useState<"loading" | "ready" | "error">("loading");
@@ -153,7 +155,7 @@ function AudioBlobPlayer({
   if (phase === "error") {
     return (
       <Text style={[styles.audioError, { color: labelColor }]}>
-        Could not load audio.
+        {t("attachment.errorLoadAudio")}
       </Text>
     );
   }
@@ -176,7 +178,7 @@ function AudioBlobPlayer({
       </View>
       <Pressable
         accessibilityRole="adjustable"
-        accessibilityLabel="Seek audio"
+        accessibilityLabel={t("attachment.a11ySeekAudio")}
         onLayout={onTrackLayout}
         onPress={onSeekPress}
         style={({ pressed }) => [
@@ -208,7 +210,7 @@ function AudioBlobPlayer({
           color={accentColor}
         />
         <Text style={[styles.playBtnLabel, { color: accentColor }]}>
-          {playing ? "Pause" : "Play"}
+          {playing ? t("attachment.pause") : t("attachment.play")}
         </Text>
       </Pressable>
     </View>
@@ -218,6 +220,7 @@ function AudioBlobPlayer({
 const SHEET_CHROME_ESTIMATE = 200;
 
 export function BlobViewModal({ isOpen, onClose, blobId }: BlobViewModalProps) {
+  const { t } = useTranslation();
   const scheme = useColorScheme();
   const sheet = selectCapsuleUiPalette(scheme);
   const insets = useSafeAreaInsets();
@@ -299,7 +302,7 @@ export function BlobViewModal({ isOpen, onClose, blobId }: BlobViewModalProps) {
       const ext = extensionForBlobMime(payload.mimeType);
       const base = cacheDirectory;
       if (!base) {
-        alertError(null, "File cache is not available on this device.");
+        alertError(null, t("attachment.errorNoCache"));
         return;
       }
       const path = `${base}blob-share-${blobId}.${ext}`;
@@ -308,17 +311,17 @@ export function BlobViewModal({ isOpen, onClose, blobId }: BlobViewModalProps) {
       });
       const available = await Sharing.isAvailableAsync();
       if (!available) {
-        alertError(null, "Sharing is not available on this device.");
+        alertError(null, t("attachment.errorNoSharing"));
         return;
       }
       await Sharing.shareAsync(path, {
         mimeType: payload.mimeType,
-        dialogTitle: "Share file",
+        dialogTitle: t("attachment.shareDialogTitle"),
       });
     } catch (e) {
-      alertError(e, "Could not share file.");
+      alertError(e, t("attachment.errorShare"));
     }
-  }, [blobId, payload]);
+  }, [blobId, payload, t]);
 
   const label = sheet.textPrimary as ColorValue;
   const secondary = sheet.textSecondary as ColorValue;
@@ -356,7 +359,7 @@ export function BlobViewModal({ isOpen, onClose, blobId }: BlobViewModalProps) {
       <View style={styles.backdropContainer}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Close attachment"
+          accessibilityLabel={t("attachment.a11yCloseSheet")}
           onPress={dismiss}
           style={styles.backdrop}
         />
@@ -378,7 +381,7 @@ export function BlobViewModal({ isOpen, onClose, blobId }: BlobViewModalProps) {
             style={[styles.title, { color: label }]}
             accessibilityRole="header"
           >
-            Attachment
+            {t("attachment.title")}
           </Text>
 
           <ScrollView
@@ -392,7 +395,7 @@ export function BlobViewModal({ isOpen, onClose, blobId }: BlobViewModalProps) {
             ) : null}
             {phase === "error" ? (
               <Text style={[styles.err, { color: sheet.error }]}>
-                Could not load this attachment.
+                {t("attachment.errorLoad")}
               </Text>
             ) : null}
             {phase === "ready" && payload ? (
@@ -405,7 +408,7 @@ export function BlobViewModal({ isOpen, onClose, blobId }: BlobViewModalProps) {
                 {kind === "image" && dataUri ? (
                   <Pressable
                     accessibilityRole="imagebutton"
-                    accessibilityLabel="View image full screen"
+                    accessibilityLabel={t("attachment.a11yViewFullscreen")}
                     onPress={() => setImageFullscreen(true)}
                     style={({ pressed }) => [
                       styles.imagePressable,
@@ -439,14 +442,13 @@ export function BlobViewModal({ isOpen, onClose, blobId }: BlobViewModalProps) {
                 ) : null}
                 {kind === "other" ? (
                   <Text style={[styles.otherHint, { color: secondary }]}>
-                    Preview is not available for this type. Use Share file to
-                    open or save it in another app.
+                    {t("attachment.otherTypeHint")}
                   </Text>
                 ) : null}
                 <Pressable
                   onPress={onShareFile}
                   accessibilityRole="button"
-                  accessibilityLabel="Share file"
+                  accessibilityLabel={t("attachment.a11yShareFile")}
                   style={({ pressed }) => [
                     styles.shareFileBtn,
                     {
@@ -459,7 +461,7 @@ export function BlobViewModal({ isOpen, onClose, blobId }: BlobViewModalProps) {
                 >
                   <Ionicons name="share-outline" size={20} color={accent} />
                   <Text style={[styles.shareFileBtnLabel, { color: accent }]}>
-                    Share file
+                    {t("attachment.shareFile")}
                   </Text>
                 </Pressable>
               </View>
@@ -483,9 +485,11 @@ export function BlobViewModal({ isOpen, onClose, blobId }: BlobViewModalProps) {
                 pressed && { opacity: 0.55 },
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Done"
+              accessibilityLabel={t("common.done")}
             >
-              <Text style={[styles.doneLabel, { color: accent }]}>Done</Text>
+              <Text style={[styles.doneLabel, { color: accent }]}>
+                {t("common.done")}
+              </Text>
             </Pressable>
           </View>
         </View>

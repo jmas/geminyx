@@ -575,7 +575,6 @@ function PreBlock({
 
   return (
     <CodeBlockContextMenu
-      title="Code block"
       text={text}
       onCopyImage={runExportCopy}
       captureTargetRef={captureViewRef}

@@ -1,5 +1,8 @@
+import type { TFunction } from "i18next";
 import { Ionicons } from "@expo/vector-icons";
 import { Formik, type FormikHelpers } from "formik";
+import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Keyboard,
   Platform,
@@ -30,16 +33,18 @@ export const messageFormEmptyValues: MessageFormValues = {
   body: "",
 };
 
-export const messageFormValidationSchema = yup.object({
-  body: yup.string().max(4096, "Message is too long"),
-});
+export function buildMessageFormValidationSchema(t: TFunction) {
+  return yup.object({
+    body: yup.string().max(4096, t("messageForm.validationTooLong")),
+  });
+}
 
 export type MessageFormProps = {
   palette: MessageFormPalette;
   bottomInset: number;
   isPending: boolean;
   disabled?: boolean;
-  /** Shown when the field is empty. Defaults to "Message". */
+  /** Shown when the field is empty. Defaults to translated “Message”. */
   placeholder?: string;
   onSubmitBody: (body: string) => Promise<void>;
   /** When set, shows a home icon left of the field (capsule root request). */
@@ -53,15 +58,21 @@ export function MessageForm({
   bottomInset,
   isPending,
   disabled = false,
-  placeholder = "Message",
+  placeholder,
   onSubmitBody,
   onRequestHome,
   requestHomeAsRefresh = false,
 }: MessageFormProps) {
+  const { t } = useTranslation();
+  const resolvedPlaceholder = placeholder ?? t("messageForm.placeholderDefault");
+  const validationSchema = useMemo(
+    () => buildMessageFormValidationSchema(t),
+    [t],
+  );
   return (
     <Formik<MessageFormValues>
       initialValues={messageFormEmptyValues}
-      validationSchema={messageFormValidationSchema}
+      validationSchema={validationSchema}
       onSubmit={async (
         values,
         { resetForm, setFieldValue }: FormikHelpers<MessageFormValues>,
@@ -87,7 +98,7 @@ export function MessageForm({
         } catch (e) {
           logThreadMessage("composer.submit.error", {
             bodyChars: text.length,
-            error: formatError(e, "Unknown error."),
+            error: formatError(e, t("common.unknownError")),
           });
           await setFieldValue("body", text);
         }
@@ -133,7 +144,9 @@ export function MessageForm({
                   !canHome && styles.composerSendDisabled,
                 ]}
                 accessibilityLabel={
-                  requestHomeAsRefresh ? "Revisit home" : "Visit home"
+                  requestHomeAsRefresh
+                    ? t("messageForm.a11yRevisitHome")
+                    : t("messageForm.a11yVisitHome")
                 }
                 accessibilityState={{ disabled: !canHome }}
               >
@@ -159,7 +172,7 @@ export function MessageForm({
             >
               <TextInput
                 style={[styles.composerInput, { color: palette.composerText }]}
-                placeholder={placeholder}
+                placeholder={resolvedPlaceholder}
                 placeholderTextColor={palette.composerPlaceholder}
                 value={values.body}
                 onChangeText={handleChange("body")}
@@ -179,7 +192,7 @@ export function MessageForm({
                 !canSend && styles.composerSendDisabled,
                 pressed && canSend && styles.composerIconPressed,
               ]}
-              accessibilityLabel="Send message"
+              accessibilityLabel={t("messageForm.a11ySend")}
               accessibilityState={{ disabled: !canSend }}
             >
               <Ionicons name="send" size={22} color={palette.iconSend} />

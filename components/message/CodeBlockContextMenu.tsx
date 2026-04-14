@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActionSheetIOS,
   Alert,
@@ -6,6 +7,13 @@ import {
   View,
 } from "react-native";
 import { setImageAsync, setStringAsync } from "lib/clipboard";
+
+/** Stable `Error.message` values mapped to i18n in the menu handler. */
+const CODEBLOCK_ERR = {
+  RENDERING: "CODEBLOCK_RENDERING",
+  NO_CAPTURE: "CODEBLOCK_NO_CAPTURE",
+  CAPTURE_EMPTY: "CODEBLOCK_CAPTURE_EMPTY",
+} as const;
 
 export type CodeBlockContextMenuProps = {
   text: string;
@@ -57,7 +65,7 @@ async function copyRefAsPngToClipboard(
   });
 
   if (!base64 || base64.length < 64) {
-    throw new Error("Image capture returned empty data.");
+    throw new Error(CODEBLOCK_ERR.CAPTURE_EMPTY);
   }
 
   await setImageAsync(base64);
@@ -66,11 +74,13 @@ async function copyRefAsPngToClipboard(
 export function CodeBlockContextMenu({
   text,
   children,
-  title = "Code block",
+  title,
   onCopyImage,
   captureTargetRef,
   captureOptions,
 }: CodeBlockContextMenuProps) {
+  const { t } = useTranslation();
+  const menuTitle = title ?? t("codeBlock.titleDefault");
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const movedRef = useRef(false);
 
@@ -91,36 +101,58 @@ export function CodeBlockContextMenu({
             return;
           }
           if (!sizeReady) {
-            throw new Error("Image is still rendering. Try again in a moment.");
+            throw new Error(CODEBLOCK_ERR.RENDERING);
           }
           if (!captureTargetRef.current)
-            throw new Error("Capture target not available.");
+            throw new Error(CODEBLOCK_ERR.NO_CAPTURE);
           await copyRefAsPngToClipboard(captureTargetRef, captureOptions);
           return;
         }
       } catch (e) {
-        const message =
-          e instanceof Error
-            ? e.message
-            : action === "copy_image"
-              ? "Could not copy image."
-              : "Could not copy to clipboard.";
-        Alert.alert(
-          title,
-          message,
-          [{ text: "OK" }],
-        );
+        let message: string;
+        if (e instanceof Error) {
+          if (e.message === CODEBLOCK_ERR.RENDERING) {
+            message = t("codeBlock.errorImageRendering");
+          } else if (e.message === CODEBLOCK_ERR.NO_CAPTURE) {
+            message = t("codeBlock.errorNoCapture");
+          } else if (e.message === CODEBLOCK_ERR.CAPTURE_EMPTY) {
+            message = t("codeBlock.errorCopyImage");
+          } else {
+            message =
+              action === "copy_image"
+                ? t("codeBlock.errorCopyImage")
+                : t("codeBlock.errorCopyText");
+          }
+        } else {
+          message =
+            action === "copy_image"
+              ? t("codeBlock.errorCopyImage")
+              : t("codeBlock.errorCopyText");
+        }
+        Alert.alert(menuTitle, message, [{ text: t("common.ok") }]);
       }
     },
-    [captureOptions, captureTargetRef, onCopyImage, sizeReady, text, title],
+    [
+      captureOptions,
+      captureTargetRef,
+      menuTitle,
+      onCopyImage,
+      sizeReady,
+      t,
+      text,
+    ],
   );
 
   const openMenu = useCallback(() => {
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
         {
-          title,
-          options: ["Copy Text", "Copy as Image", "Cancel"],
+          title: menuTitle,
+          options: [
+            t("codeBlock.copyText"),
+            t("codeBlock.copyAsImage"),
+            t("common.cancel"),
+          ],
           cancelButtonIndex: 2,
         },
         (buttonIndex) => {
@@ -131,12 +163,18 @@ export function CodeBlockContextMenu({
       return;
     }
 
-    Alert.alert(title, undefined, [
-      { text: "Copy Text", onPress: () => void handleAction("copy_text") },
-      { text: "Copy as Image", onPress: () => void handleAction("copy_image") },
-      { text: "Cancel", style: "cancel" },
+    Alert.alert(menuTitle, undefined, [
+      {
+        text: t("codeBlock.copyText"),
+        onPress: () => void handleAction("copy_text"),
+      },
+      {
+        text: t("codeBlock.copyAsImage"),
+        onPress: () => void handleAction("copy_image"),
+      },
+      { text: t("common.cancel"), style: "cancel" },
     ]);
-  }, [handleAction, title]);
+  }, [handleAction, menuTitle, t]);
 
   return (
     <View

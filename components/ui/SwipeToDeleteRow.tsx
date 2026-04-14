@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import type { ReactNode, RefObject } from "react";
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import {
   swipeDeleteActionBackground,
@@ -29,6 +30,7 @@ export function SwipeToDeleteRow({
   openRegistryRef,
   disabled,
 }: SwipeToDeleteRowProps) {
+  const { t } = useTranslation();
   const selfRef = useRef<SwipeableMethods | null>(null);
   const actionsWidth = (onEditPress ? 2 : 1) * 88;
   const [isOpenRight, setIsOpenRight] = useState(false);
@@ -53,7 +55,7 @@ export function SwipeToDeleteRow({
           {onEditPress ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Edit"
+              accessibilityLabel={t("common.edit")}
               style={[
                 styles.editAction,
                 { backgroundColor: swipeEditActionBackground() },
@@ -67,12 +69,12 @@ export function SwipeToDeleteRow({
               }}
             >
               <Ionicons name="pencil" color="#ffffff" size={20} />
-              <Text style={styles.actionLabel}>Edit</Text>
+              <Text style={styles.actionLabel}>{t("common.edit")}</Text>
             </Pressable>
           ) : null}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Delete"
+            accessibilityLabel={t("common.delete")}
             style={[
               styles.deleteAction,
               { backgroundColor: swipeDeleteActionBackground() },
@@ -86,7 +88,7 @@ export function SwipeToDeleteRow({
             }}
           >
             <Ionicons name="trash-outline" color="#ffffff" size={22} />
-            <Text style={styles.actionLabel}>Delete</Text>
+            <Text style={styles.actionLabel}>{t("common.delete")}</Text>
           </Pressable>
         </View>
       )}

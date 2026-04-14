@@ -140,12 +140,16 @@ export function CapsuleViewScreen() {
         await refetchCapsule();
       } catch (e) {
         console.error(e);
-        alertError(e, "Could not add capsule to your library.", "Add capsule");
+        alertError(
+          e,
+          t("capsules.errorAddToLibrary"),
+          t("capsules.errorAddToLibraryTitle"),
+        );
       } finally {
         setAddToLibraryPending(false);
       }
     })();
-  }, [capsule, queryClient, refetchCapsule]);
+  }, [capsule, queryClient, refetchCapsule, t]);
 
   const description = useMemo(
     () => capsule?.description?.trim() ?? "",
@@ -157,7 +161,9 @@ export function CapsuleViewScreen() {
   if (!capsuleId) {
     return (
       <View style={[styles.centered, { backgroundColor: bg }]}>
-        <Text style={{ color: palette.textPrimary }}>Missing capsule id.</Text>
+        <Text style={{ color: palette.textPrimary }}>
+          {t("capsuleEdit.missingId")}
+        </Text>
       </View>
     );
   }
@@ -173,7 +179,9 @@ export function CapsuleViewScreen() {
   if (notFound || !capsule) {
     return (
       <View style={[styles.centered, { backgroundColor: bg }]}>
-        <Text style={{ color: palette.textPrimary }}>Capsule not found.</Text>
+        <Text style={{ color: palette.textPrimary }}>
+          {t("capsuleEdit.notFound")}
+        </Text>
       </View>
     );
   }
@@ -214,10 +222,10 @@ export function CapsuleViewScreen() {
           },
         ]}
         accessibilityRole="button"
-        accessibilityLabel="Open thread"
+        accessibilityLabel={t("capsules.openThread")}
       >
         <Ionicons name="chatbubbles-outline" size={22} color="#ffffff" />
-        <Text style={styles.primaryBtnLabel}>Thread</Text>
+        <Text style={styles.primaryBtnLabel}>{t("capsules.openThread")}</Text>
       </Pressable>
 
       {isHiddenFromLibrary ? (
@@ -232,14 +240,16 @@ export function CapsuleViewScreen() {
             },
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Add capsule to library"
+          accessibilityLabel={t("capsules.a11yAddToLibrary")}
         >
           {addToLibraryPending ? (
             <ActivityIndicator color={tint} />
           ) : (
             <>
               <Ionicons name="add-outline" size={22} color={tint} />
-              <Text style={[styles.editBtnLabel, { color: tint }]}>Add Capsule</Text>
+              <Text style={[styles.editBtnLabel, { color: tint }]}>
+                {t("capsules.addCapsuleToLibraryButton")}
+              </Text>
             </>
           )}
         </Pressable>

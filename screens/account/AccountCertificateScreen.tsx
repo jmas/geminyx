@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import * as DocumentPicker from "expo-document-picker";
 import { readAsStringAsync } from "expo-file-system/legacy";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   Alert,
@@ -21,6 +22,7 @@ import { accountsRepo } from "repositories";
 import { alertError } from "utils/error";
 
 export function AccountCertificateScreen() {
+  const { t } = useTranslation();
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
   const palette = useMemo(
@@ -41,12 +43,12 @@ export function AccountCertificateScreen() {
   }, [activeAccount?.geminiClientP12Passphrase]);
 
   const certStatus = useMemo(() => {
-    if (profileLoading) return "Loading…";
-    if (!activeAccount) return "No active account";
+    if (profileLoading) return t("certificateScreen.statusLoading");
+    if (!activeAccount) return t("certificateScreen.statusNoAccount");
     return activeAccount.geminiClientP12Base64
-      ? "A certificate is configured for this account."
-      : "No certificate configured.";
-  }, [activeAccount, profileLoading]);
+      ? t("certificateScreen.statusConfigured")
+      : t("certificateScreen.statusNotConfigured");
+  }, [activeAccount, profileLoading, t]);
 
   const handleImportPkcs12 = useCallback(async () => {
     if (!activeAccount) return;
@@ -58,7 +60,10 @@ export function AccountCertificateScreen() {
       if (picked.canceled) return;
       const uri = picked.assets?.[0]?.uri;
       if (!uri) {
-        Alert.alert("Certificate", "Could not read the selected file.");
+        Alert.alert(
+          t("stack.certificate"),
+          t("certificateScreen.importReadError"),
+        );
         return;
       }
       const base64 = await readAsStringAsync(uri, { encoding: "base64" });
@@ -74,14 +79,14 @@ export function AccountCertificateScreen() {
         setBusy(false);
       }
       Alert.alert(
-        "Certificate",
-        "PKCS#12 saved. It will be used for Gemini requests from this account.",
+        t("certificateScreen.importSuccessTitle"),
+        t("certificateScreen.importSuccessMsg"),
       );
     } catch (e) {
       console.error("handleImportPkcs12", e);
-      alertError(e, "Could not import certificate.", "Certificate");
+      alertError(e, t("certificateScreen.errorImport"), t("stack.certificate"));
     }
-  }, [activeAccount, queryClient]);
+  }, [activeAccount, queryClient, t]);
 
   const handleSavePassphrase = useCallback(async () => {
     if (!activeAccount) return;
@@ -93,24 +98,27 @@ export function AccountCertificateScreen() {
       await queryClient.invalidateQueries({
         queryKey: queryKeys.accounts.active(),
       });
-      Alert.alert("Certificate", "Passphrase saved.");
+      Alert.alert(
+        t("certificateScreen.importSuccessTitle"),
+        t("certificateScreen.passphraseSaved"),
+      );
     } catch (e) {
       console.error("handleSavePassphrase", e);
-      alertError(e, "Could not save passphrase.", "Certificate");
+      alertError(e, t("certificateScreen.errorPassphrase"), t("stack.certificate"));
     } finally {
       setBusy(false);
     }
-  }, [activeAccount, passphraseDraft, queryClient]);
+  }, [activeAccount, passphraseDraft, queryClient, t]);
 
   const handleClearCert = useCallback(() => {
     if (!activeAccount) return;
     Alert.alert(
-      "Remove client certificate?",
-      "Gemini requests will no longer use a client certificate for this account.",
+      t("certificateScreen.removeTitle"),
+      t("certificateScreen.removeMsg"),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Remove",
+          text: t("certificateScreen.removeConfirm"),
           style: "destructive",
           onPress: async () => {
             try {
@@ -125,7 +133,7 @@ export function AccountCertificateScreen() {
               });
             } catch (e) {
               console.error("handleClearCert", e);
-              alertError(e, "Could not remove certificate.", "Certificate");
+              alertError(e, t("certificateScreen.errorRemove"), t("stack.certificate"));
             } finally {
               setBusy(false);
             }
@@ -133,7 +141,7 @@ export function AccountCertificateScreen() {
         },
       ],
     );
-  }, [activeAccount, queryClient]);
+  }, [activeAccount, queryClient, t]);
 
   return (
     <View style={[styles.screen, { backgroundColor: palette.background }]}>
@@ -148,13 +156,12 @@ export function AccountCertificateScreen() {
         showsVerticalScrollIndicator
       >
         <Text style={[styles.hint, { color: palette.textSecondary }]}>
-          Optional PKCS#12 (.p12) for servers that require TLS client
-          authentication. On iOS, the native Gemini fetch can use this certificate.
+          {t("certificateScreen.introHint")}
         </Text>
 
         <View style={[styles.card, { backgroundColor: palette.fieldBg }]}>
           <Text style={[styles.cardTitle, { color: palette.textPrimary }]}>
-            Status
+            {t("certificateScreen.statusTitle")}
           </Text>
           <Text
             style={[
@@ -185,7 +192,7 @@ export function AccountCertificateScreen() {
               <ActivityIndicator />
             ) : (
               <Text style={[styles.secondaryLabel, { color: palette.textPrimary }]}>
-                Import PKCS#12 file…
+                {t("certificateScreen.importButton")}
               </Text>
             )}
           </Pressable>
@@ -193,15 +200,15 @@ export function AccountCertificateScreen() {
 
         <View style={[styles.card, { backgroundColor: palette.fieldBg }]}>
           <Text style={[styles.cardTitle, { color: palette.textPrimary }]}>
-            Passphrase
+            {t("certificateScreen.passphraseTitle")}
           </Text>
           <Text style={[styles.hint, { color: palette.textSecondary }]}>
-            If the archive is encrypted.
+            {t("certificateScreen.passphraseHint")}
           </Text>
           <TextInput
             value={passphraseDraft}
             onChangeText={setPassphraseDraft}
-            placeholder="Optional"
+            placeholder={t("certificateScreen.placeholderOptional")}
             placeholderTextColor={palette.textTertiary}
             secureTextEntry
             autoCapitalize="none"
@@ -229,7 +236,7 @@ export function AccountCertificateScreen() {
             ]}
           >
             <Text style={[styles.secondaryLabel, { color: palette.textPrimary }]}>
-              Save passphrase
+              {t("certificateScreen.savePassphrase")}
             </Text>
           </Pressable>
         </View>
@@ -246,7 +253,7 @@ export function AccountCertificateScreen() {
               ]}
             >
               <Text style={[styles.dangerLabel, { color: palette.danger }]}>
-                Remove certificate
+                {t("certificateScreen.removeButton")}
               </Text>
             </Pressable>
           </View>

@@ -1,3 +1,6 @@
+import i18n from "lib/i18n/init";
+import { localeTagForDateFormatting } from "utils/dateLocale";
+
 /**
  * Telegram-style relative labels for last activity time (local calendar).
  */
@@ -7,33 +10,35 @@ export function formatLastMessageDate(isoString: string, now = new Date()): stri
     return "";
   }
 
+  const loc = localeTagForDateFormatting();
+
   const diffMs = now.getTime() - date.getTime();
   if (diffMs < 0) {
-    return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return date.toLocaleTimeString(loc, { hour: "numeric", minute: "2-digit" });
   }
   if (diffMs < 60_000) {
-    return "just now";
+    return i18n.t("dates.justNow");
   }
 
   if (isSameCalendarDay(date, now)) {
-    return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    return date.toLocaleTimeString(loc, { hour: "numeric", minute: "2-digit" });
   }
 
   if (isYesterday(date, now)) {
-    return "yesterday";
+    return i18n.t("dates.yesterday");
   }
 
   const weekAgo = new Date(now);
   weekAgo.setDate(weekAgo.getDate() - 7);
   if (date > weekAgo) {
-    return date.toLocaleDateString(undefined, { weekday: "long" });
+    return date.toLocaleDateString(loc, { weekday: "long" });
   }
 
   if (date.getFullYear() === now.getFullYear()) {
-    return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    return date.toLocaleDateString(loc, { month: "short", day: "numeric" });
   }
 
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(loc, {
     year: "numeric",
     month: "short",
     day: "numeric",

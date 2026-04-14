@@ -1,5 +1,7 @@
+import type { TFunction } from "i18next";
 import { Formik, type FormikHelpers } from "formik";
-import { type ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   Platform,
@@ -38,21 +40,23 @@ function isEmptyOrValidUrl(value: string | undefined) {
   }
 }
 
-export const accountFormValidationSchema = yup.object({
-  name: yup.string().trim().required("Name is required"),
-  email: yup
-    .string()
-    .trim()
-    .test(
-      "email",
-      "Enter a valid email or leave blank",
-      (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
-    ),
-  capsuleUrl: yup
-    .string()
-    .trim()
-    .test("url", "Must be a valid URL", isEmptyOrValidUrl),
-});
+export function buildAccountFormValidationSchema(t: TFunction) {
+  return yup.object({
+    name: yup.string().trim().required(t("accountForm.validation.nameRequired")),
+    email: yup
+      .string()
+      .trim()
+      .test(
+        "email",
+        t("accountForm.validation.emailInvalid"),
+        (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
+      ),
+    capsuleUrl: yup
+      .string()
+      .trim()
+      .test("url", t("accountForm.validation.urlInvalid"), isEmptyOrValidUrl),
+  });
+}
 
 export type AccountFormPalette = {
   background: ColorValue;
@@ -92,9 +96,15 @@ export function AccountForm({
   submittingHint,
   disabled = false,
   footerExtra,
-  submitLabel = "Create an account",
+  submitLabel,
   onSubmit,
 }: AccountFormProps) {
+  const { t } = useTranslation();
+  const resolvedSubmitLabel = submitLabel ?? t("accountForm.defaultSubmit");
+  const validationSchema = useMemo(
+    () => buildAccountFormValidationSchema(t),
+    [t],
+  );
   const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardHeight();
   const footerBottomPad = Math.max(insets.bottom, 12);
@@ -104,7 +114,7 @@ export function AccountForm({
     <Formik<AccountFormValues>
       initialValues={initialValues ?? accountFormEmptyValues}
       enableReinitialize
-      validationSchema={accountFormValidationSchema}
+      validationSchema={validationSchema}
       onSubmit={onSubmit}
     >
       {({
@@ -132,12 +142,12 @@ export function AccountForm({
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
             >
-              <FieldBlock label="Display name" palette={palette}>
+              <FieldBlock label={t("accountForm.displayName")} palette={palette}>
                 <TextInput
                   value={values.name}
                   onChangeText={handleChange("name")}
                   onBlur={handleBlur("name")}
-                  placeholder="Your name"
+                  placeholder={t("accountForm.placeholderName")}
                   placeholderTextColor={palette.placeholder}
                   autoCorrect={false}
                   autoCapitalize="words"
@@ -158,12 +168,12 @@ export function AccountForm({
                 ) : null}
               </FieldBlock>
 
-              <FieldBlock label="Email" palette={palette}>
+              <FieldBlock label={t("accountForm.email")} palette={palette}>
                 <TextInput
                   value={values.email}
                   onChangeText={handleChange("email")}
                   onBlur={handleBlur("email")}
-                  placeholder="Optional"
+                  placeholder={t("accountForm.placeholderEmailOptional")}
                   placeholderTextColor={palette.placeholder}
                   autoCorrect={false}
                   autoCapitalize="none"
@@ -185,12 +195,12 @@ export function AccountForm({
                 ) : null}
               </FieldBlock>
 
-              <FieldBlock label="Capsule URL" palette={palette}>
+              <FieldBlock label={t("accountForm.capsuleUrl")} palette={palette}>
                 <TextInput
                   value={values.capsuleUrl}
                   onChangeText={handleChange("capsuleUrl")}
                   onBlur={handleBlur("capsuleUrl")}
-                  placeholder="gemini://… or https://…"
+                  placeholder={t("accountForm.placeholderCapsuleUrl")}
                   placeholderTextColor={palette.placeholder}
                   autoCorrect={false}
                   autoCapitalize="none"
@@ -259,7 +269,7 @@ export function AccountForm({
                       { color: palette.primaryLabel },
                     ]}
                   >
-                    {submitLabel}
+                    {resolvedSubmitLabel}
                   </Text>
                 )}
               </Pressable>

@@ -244,11 +244,13 @@ export function ThreadViewScreen() {
 
   const visitFooterPrimaryLabel = useMemo(() => {
     const raw = urlParam?.trim();
-    if (!raw) return "Visit";
+    if (!raw) return t("thread.visit");
     const path = geminiPathnameForVisitButton(raw);
-    if (!path) return "Visit";
-    return `Visit ${truncateForVisitButtonLabel(path)}`;
-  }, [urlParam]);
+    if (!path) return t("thread.visit");
+    return t("thread.visitWithPath", {
+      path: truncateForVisitButtonLabel(path),
+    });
+  }, [urlParam, t]);
 
   const scheduleScrollToEnd = useCallback(() => {
     requestAnimationFrame(() =>
@@ -412,7 +414,7 @@ export function ThreadViewScreen() {
         } catch (e) {
           logThreadMessage("gemini.link.cross_capsule.error", {
             target: target.slice(0, 120),
-            error: formatError(e, "Unknown error."),
+            error: formatError(e, t("common.unknownError")),
           });
           alertError(e, t("thread.openCapsuleError"), t("thread.openCapsuleError"));
         }
@@ -560,7 +562,9 @@ export function ThreadViewScreen() {
             pressed && capsuleHeaderMeta.id ? { opacity: 0.65 } : null,
           ]}
           accessibilityRole="button"
-          accessibilityLabel={`${capsuleHeaderMeta.name} capsule details`}
+          accessibilityLabel={t("thread.a11yCapsuleDetails", {
+            name: capsuleHeaderMeta.name,
+          })}
         >
           <CapsuleAvatar
             capsuleId={capsuleHeaderMeta.id || threadId || "capsule"}
@@ -600,11 +604,11 @@ export function ThreadViewScreen() {
 
   const composerPlaceholder = useMemo(() => {
     const raw = lastMessage?.body?.trim();
-    if (!raw) return "Message";
+    if (!raw) return t("messageForm.placeholderDefault");
     const max = 80;
     if (raw.length <= max) return raw;
     return `${raw.slice(0, max)}…`;
-  }, [lastMessage?.body]);
+  }, [lastMessage?.body, t]);
 
   const requestHomeAsRefresh = useMemo(() => {
     if (lastMessage == null) return false;
@@ -613,8 +617,8 @@ export function ThreadViewScreen() {
 
   const visitHomeFooterLabel = useMemo(() => {
     if (urlParam?.trim()) return visitFooterPrimaryLabel;
-    return requestHomeAsRefresh ? "Revisit home" : "Visit home";
-  }, [urlParam, visitFooterPrimaryLabel, requestHomeAsRefresh]);
+    return requestHomeAsRefresh ? t("thread.revisitHome") : t("thread.visitHome");
+  }, [urlParam, visitFooterPrimaryLabel, requestHomeAsRefresh, t]);
 
   const lastExpectsInput =
     lastMessage != null &&
@@ -641,8 +645,8 @@ export function ThreadViewScreen() {
       <BlockingProgressModal
         visible={certGenVisible}
         blocking
-        title="Generating certificate…"
-        message="This may take up to 2.5 minutes. We’ll cancel if it takes longer."
+        title={t("thread.certGenTitle")}
+        message={t("thread.certGenMessage")}
         progressDurationMs={CERT_GEN_TIMEOUT_MS}
         progressKey={certGenProgressKey}
       />

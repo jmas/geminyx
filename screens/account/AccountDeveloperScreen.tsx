@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   Alert,
@@ -22,6 +23,7 @@ import { developerScreenPaletteForScheme } from "lib/theme/semanticUi";
 import { alertError } from "utils/error";
 
 export function AccountDeveloperScreen() {
+  const { t } = useTranslation();
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
   const palette = useMemo(
@@ -40,27 +42,27 @@ export function AccountDeveloperScreen() {
       await exportLocalDatabaseToCacheAndShare();
     } catch (e) {
       console.error("exportLocalDatabaseToCacheAndShare failed", e);
-      alertError(e, "Could not export the database.", "Could not export the database");
+      alertError(e, t("developerScreen.errorExport"), t("developerScreen.errorExport"));
     } finally {
       setExporting(false);
     }
-  }, []);
+  }, [t]);
 
   const confirmImportDatabase = useCallback(() => {
     Alert.alert(
-      "Import database?",
-      "This replaces the local SQLite file with the file you pick. Unsaved work in memory may be lost. The app reloads in development; in release builds you may need to force-quit and reopen.",
+      t("developerScreen.importTitle"),
+      t("developerScreen.importMsg"),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Choose file",
+          text: t("developerScreen.importChooseFile"),
           onPress: async () => {
             try {
               setImporting(true);
               await importLocalDatabaseFromPicker();
             } catch (e) {
               console.error("importLocalDatabaseFromPicker failed", e);
-              alertError(e, "Could not import the database.", "Could not import the database");
+              alertError(e, t("developerScreen.errorImport"), t("developerScreen.errorImport"));
             } finally {
               setImporting(false);
             }
@@ -68,16 +70,16 @@ export function AccountDeveloperScreen() {
         },
       ],
     );
-  }, []);
+  }, [t]);
 
   const confirmEraseLocalData = useCallback(() => {
     Alert.alert(
-      "Erase local database?",
-      "All accounts, capsules, threads, and messages on this device will be removed. You will return to onboarding.",
+      t("developerScreen.eraseTitle"),
+      t("developerScreen.eraseMsg"),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Erase",
+          text: t("developerScreen.eraseConfirm"),
           style: "destructive",
           onPress: async () => {
             try {
@@ -85,13 +87,13 @@ export function AccountDeveloperScreen() {
               notifyLocalDatabaseErased();
             } catch (e) {
               console.error("resetLocalDatabase failed", e);
-              alertError(e, "Could not erase database.", "Could not erase database");
+              alertError(e, t("developerScreen.errorErase"), t("developerScreen.errorErase"));
             }
           },
         },
       ],
     );
-  }, []);
+  }, [t]);
 
   return (
     <View style={[styles.screen, { backgroundColor: palette.background }]}>
@@ -103,18 +105,16 @@ export function AccountDeveloperScreen() {
         ]}
       >
         <Text style={[styles.hint, { color: palette.textSecondary }]}>
-          Developer utilities for this device.
+          {t("developerScreen.introHint")}
         </Text>
 
         {showEraseLocalDatabase ? (
           <View style={[styles.card, { backgroundColor: palette.cardBg }]}>
             <Text style={[styles.cardTitle, { color: palette.textPrimary }]}>
-              Local database
+              {t("developerScreen.localDbTitle")}
             </Text>
             <Text style={[styles.hint, { color: palette.textSecondary }]}>
-              Export or import the WatermelonDB SQLite file (geminyx.db).
-              Import replaces the file on disk; use backups from trusted sources
-              only.
+              {t("developerScreen.localDbHint")}
             </Text>
             <View style={styles.row}>
               <Pressable
@@ -131,7 +131,7 @@ export function AccountDeveloperScreen() {
                   <ActivityIndicator color={accent} />
                 ) : (
                   <Text style={[styles.accentLabel, { color: accent }]}>
-                    Export database
+                    {t("developerScreen.exportDb")}
                   </Text>
                 )}
               </Pressable>
@@ -149,14 +149,13 @@ export function AccountDeveloperScreen() {
                   <ActivityIndicator color={accent} />
                 ) : (
                   <Text style={[styles.accentLabel, { color: accent }]}>
-                    Import database
+                    {t("developerScreen.importDb")}
                   </Text>
                 )}
               </Pressable>
             </View>
             <Text style={[styles.hint, { color: palette.textSecondary }]}>
-              Erase removes all local data in SQLite. You will return to
-              onboarding.
+              {t("developerScreen.eraseHint")}
             </Text>
             <Pressable
               onPress={confirmEraseLocalData}
@@ -167,14 +166,14 @@ export function AccountDeveloperScreen() {
               ]}
             >
               <Text style={[styles.dangerLabel, { color: palette.danger }]}>
-                Erase local database
+                {t("developerScreen.eraseButton")}
               </Text>
             </Pressable>
           </View>
         ) : (
           <View style={[styles.card, { backgroundColor: palette.cardBg }]}>
             <Text style={[styles.hint, { color: palette.textSecondary }]}>
-              Local database erase is not available on web.
+              {t("developerScreen.eraseNotAvailable")}
             </Text>
           </View>
         )}

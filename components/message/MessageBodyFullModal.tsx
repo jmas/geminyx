@@ -9,6 +9,7 @@ import {
   View,
   type ColorValue,
 } from "react-native";
+import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import {
@@ -42,6 +43,7 @@ export function MessageBodyFullModal({
   geminiLinksDisabled,
   onLinkFollow,
 }: MessageBodyFullModalProps) {
+  const { t } = useTranslation();
   const scheme = useColorScheme();
   const sheet = selectCapsuleUiPalette(scheme);
   const insets = useSafeAreaInsets();
@@ -73,7 +75,7 @@ export function MessageBodyFullModal({
           style={[styles.title, { color: sheet.sheetTitle }]}
           accessibilityRole="header"
         >
-          Message
+          {t("messageContextMenu.title")}
         </Text>
         <ScrollView
           style={styles.scroll}
@@ -108,10 +110,10 @@ export function MessageBodyFullModal({
               styles.closeBtn,
               pressed && { opacity: 0.55 },
             ]}
-            accessibilityLabel="Close"
+            accessibilityLabel={t("common.close")}
           >
             <Text style={[styles.closeLabel, { color: sheet.cancelLabel }]}>
-              Close
+              {t("common.close")}
             </Text>
           </Pressable>
         </View>

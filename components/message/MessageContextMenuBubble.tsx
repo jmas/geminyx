@@ -1,4 +1,5 @@
 import { type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { Alert, Pressable, StyleSheet } from "react-native";
 
 export type MessageContextMenuBubbleProps = {
@@ -18,15 +19,16 @@ export function MessageContextMenuBubble({
   systemIcon: _systemIcon,
   onRefetch,
 }: MessageContextMenuBubbleProps) {
+  const { t } = useTranslation();
   return (
     <Pressable
       style={styles.wrap}
       disabled={disabled}
       onLongPress={() => {
         if (disabled) return;
-        Alert.alert("Message", undefined, [
+        Alert.alert(t("messageContextMenu.title"), undefined, [
           { text: actionTitle, onPress: onRefetch },
-          { text: "Cancel", style: "cancel" },
+          { text: t("common.cancel"), style: "cancel" },
         ]);
       }}
       delayLongPress={450}

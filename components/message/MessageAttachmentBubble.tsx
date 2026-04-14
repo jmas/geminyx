@@ -1,10 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Pressable, StyleSheet, Text, View, type ColorValue } from "react-native";
-import {
-  attachmentKindLabel,
-  blobMediaKind,
-  type BlobMediaKind,
-} from "lib/models/blobMedia";
+import { blobMediaKind, type BlobMediaKind } from "lib/models/blobMedia";
 import { formatByteCount } from "utils/formatBytes";
 
 const KIND_THEME: Record<
@@ -69,11 +67,23 @@ export function MessageAttachmentBubble({
   onPress,
   pending = false,
 }: MessageAttachmentBubbleProps) {
+  const { t } = useTranslation();
   const kind = blobMediaKind(mimeType ?? "");
   const theme = KIND_THEME[kind];
   const bytes = byteLength ?? 0;
   const sizeLabel = formatByteCount(bytes);
-  const kindLabel = attachmentKindLabel(kind);
+  const kindLabel = useMemo(() => {
+    switch (kind) {
+      case "image":
+        return t("attachment.kindImage");
+      case "audio":
+        return t("attachment.kindAudio");
+      case "video":
+        return t("attachment.kindVideo");
+      default:
+        return t("attachment.kindFile");
+    }
+  }, [kind, t]);
   const trimmedName = fileName?.trim();
   const title = trimmedName || kindLabel;
   const mediaAndSize = `${kindLabel} · ${sizeLabel}`;
@@ -109,9 +119,13 @@ export function MessageAttachmentBubble({
           {mediaAndSize}
         </Text>
         {pending ? (
-          <Text style={[styles.hint, { color: mutedColor }]}>Preparing…</Text>
+          <Text style={[styles.hint, { color: mutedColor }]}>
+            {t("attachment.preparing")}
+          </Text>
         ) : onPress ? (
-          <Text style={[styles.hint, { color: mutedColor }]}>Tap to open</Text>
+          <Text style={[styles.hint, { color: mutedColor }]}>
+            {t("attachment.tapToOpen")}
+          </Text>
         ) : null}
       </View>
     </View>

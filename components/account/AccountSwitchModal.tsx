@@ -13,6 +13,7 @@ import {
   useColorScheme,
   View,
 } from "react-native";
+import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import type { Account } from "lib/models/account";
@@ -29,6 +30,7 @@ export type AccountSwitchModalProps = {
 };
 
 export function AccountSwitchModal({ visible, onClose }: AccountSwitchModalProps) {
+  const { t } = useTranslation();
   const queryClient = useQueryClient();
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
@@ -192,9 +194,11 @@ export function AccountSwitchModal({ visible, onClose }: AccountSwitchModalProps
               pressed && { opacity: 0.55 },
             ]}
             accessibilityRole="button"
-            accessibilityLabel="Done"
+            accessibilityLabel={t("common.done")}
           >
-            <Text style={[styles.doneLabel, { color: sheet.cancelLabel }]}>Done</Text>
+            <Text style={[styles.doneLabel, { color: sheet.cancelLabel }]}>
+              {t("common.done")}
+            </Text>
           </Pressable>
         </View>
       </View>

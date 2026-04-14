@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   Alert,
@@ -51,6 +52,7 @@ export function CategoryManageModal({
   onClose,
   accountId: accountIdProp,
 }: CategoryManageModalProps) {
+  const { t } = useTranslation();
   const dismiss = onClose ?? (() => {});
   const scheme = useColorScheme();
   const palette = selectCapsuleUiPalette(scheme);
@@ -145,10 +147,10 @@ export function CategoryManageModal({
     createMutation.mutate(name, {
       onError: (e) => {
         console.error(e);
-        alertError(e, "Could not add category.", "Add category");
+        alertError(e, t("categories.errorAdd"), t("categories.title"));
       },
     });
-  }, [createMutation, draftName]);
+  }, [createMutation, draftName, t]);
 
   const startEdit = useCallback((c: Category) => {
     setEditingId(c.id);
@@ -164,27 +166,27 @@ export function CategoryManageModal({
       {
         onError: (e) => {
           console.error(e);
-          alertError(e, "Could not save.", "Rename category");
+          alertError(e, t("categories.errorRename"), t("categories.title"));
         },
       },
     );
-  }, [editingId, editingText, renameMutation]);
+  }, [editingId, editingText, renameMutation, t]);
 
   const confirmDelete = useCallback(
     (c: Category) => {
       Alert.alert(
-        "Delete category?",
-        `“${c.name}” will be removed. Capsules in this category move to General.`,
+        t("categories.deleteTitle"),
+        t("categories.deleteMsg", { name: c.name }),
         [
-          { text: "Cancel", style: "cancel" },
+          { text: t("common.cancel"), style: "cancel" },
           {
-            text: "Delete",
+            text: t("common.delete"),
             style: "destructive",
             onPress: () => {
               deleteMutation.mutate(c.id, {
                 onError: (e) => {
                   console.error(e);
-                  alertError(e, "Could not delete.", "Delete category");
+                  alertError(e, t("categories.errorDelete"), t("categories.title"));
                 },
               });
             },
@@ -192,7 +194,7 @@ export function CategoryManageModal({
         ],
       );
     },
-    [deleteMutation],
+    [deleteMutation, t],
   );
 
   const move = useCallback(
@@ -203,11 +205,11 @@ export function CategoryManageModal({
       reorderMutation.mutate(ordered, {
         onError: (e) => {
           console.error(e);
-          alertError(e, "Could not reorder.", "Reorder");
+          alertError(e, t("categories.errorReorder"), t("categories.title"));
         },
       });
     },
-    [categories, reorderMutation],
+    [categories, reorderMutation, t],
   );
 
   return (
@@ -229,20 +231,19 @@ export function CategoryManageModal({
           style={[styles.title, { color: palette.sheetTitle }]}
           accessibilityRole="header"
         >
-          Categories
+          {t("categories.title")}
         </Text>
 
         <View style={styles.body}>
         <Text style={[styles.hint, { color: palette.textSecondary }]}>
-          General is the default for capsules without a category. It is not listed
-          here.
+          {t("categories.hint")}
         </Text>
 
         <View style={[styles.addRow, { borderColor: palette.fieldBorder }]}>
           <TextInput
             value={draftName}
             onChangeText={setDraftName}
-            placeholder="New category name"
+            placeholder={t("categories.placeholderNew")}
             placeholderTextColor={palette.placeholder}
             editable={!busy}
             onSubmitEditing={onAdd}
@@ -263,7 +264,7 @@ export function CategoryManageModal({
               pressed && { opacity: 0.55 },
               (busy || !draftName.trim().length) && { opacity: 0.35 },
             ]}
-            accessibilityLabel="Add category"
+            accessibilityLabel={t("categories.addA11y")}
           >
             <Ionicons name="add-circle" size={32} color={tint} />
           </Pressable>
@@ -330,7 +331,9 @@ export function CategoryManageModal({
                         hitSlop={8}
                         style={({ pressed }) => [pressed && { opacity: 0.55 }]}
                       >
-                        <Text style={{ color: tint, fontSize: 16 }}>Save</Text>
+                        <Text style={{ color: tint, fontSize: 16 }}>
+                          {t("categories.save")}
+                        </Text>
                       </Pressable>
                     ) : (
                       <>
@@ -342,7 +345,7 @@ export function CategoryManageModal({
                             pressed && { opacity: 0.55 },
                             (busy || index === 0) && { opacity: 0.3 },
                           ]}
-                          accessibilityLabel="Move up"
+                          accessibilityLabel={t("categories.moveUp")}
                         >
                           <Ionicons
                             name="chevron-up"
@@ -360,7 +363,7 @@ export function CategoryManageModal({
                               opacity: 0.3,
                             },
                           ]}
-                          accessibilityLabel="Move down"
+                          accessibilityLabel={t("categories.moveDown")}
                         >
                           <Ionicons
                             name="chevron-down"
@@ -376,7 +379,7 @@ export function CategoryManageModal({
                             pressed && { opacity: 0.55 },
                             busy && { opacity: 0.35 },
                           ]}
-                          accessibilityLabel="Delete category"
+                          accessibilityLabel={t("categories.deleteA11y")}
                         >
                           <Ionicons
                             name="trash-outline"
@@ -411,9 +414,11 @@ export function CategoryManageModal({
               pressed && { opacity: 0.55 },
             ]}
             accessibilityRole="button"
-            accessibilityLabel="Done"
+            accessibilityLabel={t("categories.done")}
           >
-            <Text style={[styles.doneLabel, { color: tint }]}>Done</Text>
+            <Text style={[styles.doneLabel, { color: tint }]}>
+              {t("common.done")}
+            </Text>
           </Pressable>
         </View>
       </View>

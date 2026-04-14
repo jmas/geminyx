@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Dimensions,
   Image,
@@ -59,6 +60,7 @@ export function ZoomableFullscreenImage({
   onSharePress,
   embedded = false,
 }: ZoomableFullscreenImageProps) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
@@ -173,7 +175,7 @@ export function ZoomableFullscreenImage({
                 source={{ uri }}
                 style={styles.image}
                 resizeMode="contain"
-                accessibilityLabel="Attachment image"
+                accessibilityLabel={t("attachment.a11yImage")}
                 accessibilityIgnoresInvertColors
               />
             </Animated.View>
@@ -183,7 +185,7 @@ export function ZoomableFullscreenImage({
           {onSharePress ? (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Share image"
+              accessibilityLabel={t("attachment.a11yShareImage")}
               onPress={onSharePress}
               style={({ pressed }) => [
                 styles.chromeBtn,
@@ -200,7 +202,7 @@ export function ZoomableFullscreenImage({
           ) : null}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Close full screen"
+            accessibilityLabel={t("attachment.a11yCloseFullscreen")}
             onPress={onClose}
             style={({ pressed }) => [
               styles.chromeBtn,

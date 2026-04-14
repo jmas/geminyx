@@ -1,5 +1,6 @@
 import type { FormikHelpers } from "formik";
 import { useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Pressable,
   StyleSheet,
@@ -32,6 +33,7 @@ export function AccountCreateScreen({
   onBackToIntro,
   onSuccess,
 }: AccountCreateScreenProps) {
+  const { t } = useTranslation();
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
 
@@ -55,12 +57,12 @@ export function AccountCreateScreen({
         await onSuccess();
       } catch (e) {
         console.error("AccountCreateScreen create failed", e);
-        alertError(e, "Could not create account.", "Could not create account");
+        alertError(e, t("accountCreate.errorCreate"), t("accountCreate.errorCreate"));
       } finally {
         setSubmitting(false);
       }
     },
-    [onSuccess],
+    [onSuccess, t],
   );
 
   return (
@@ -83,10 +85,10 @@ export function AccountCreateScreen({
                 pressed && { opacity: 0.65 },
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Back to introduction"
+              accessibilityLabel={t("accountCreate.backToIntro")}
             >
               <Text style={[styles.backLinkLabel, { color: systemBlueForScheme(scheme) }]}>
-                Back
+                {t("common.back")}
               </Text>
             </Pressable>
           ) : (
@@ -96,17 +98,16 @@ export function AccountCreateScreen({
             style={[styles.embedTitle, { color: formPalette.textPrimary }]}
             accessibilityRole="header"
           >
-            Create your account
+            {t("accountCreate.embedTitle")}
           </Text>
           <Text style={[styles.embedSubtitle, { color: formPalette.textSecondary }]}>
-            This profile is stored only on this device. You can add more accounts
-            later in Settings.
+            {t("accountCreate.embedSubtitle")}
           </Text>
         </View>
       ) : null}
       <AccountForm
         palette={formPalette}
-        submitLabel="Create account"
+        submitLabel={t("accountCreate.submit")}
         onSubmit={handleSubmit}
       />
     </View>
