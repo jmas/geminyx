@@ -44,6 +44,9 @@ export function CapsuleListScreen() {
   const palette = selectCapsuleUiPalette(scheme);
   const popupManager = usePopupManager();
   const openSwipeRef = useRef<SwipeableMethods | null>(null);
+  const suppressNextRowPressRef = useRef<{ id: string; untilMs: number } | null>(
+    null,
+  );
 
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -233,13 +236,18 @@ export function CapsuleListScreen() {
               selected={selectedIds.includes(item.id)}
               tint={tint}
               onPress={() => {
+                const sup = suppressNextRowPressRef.current;
+                if (sup && sup.id === item.id && Date.now() < sup.untilMs) {
+                  suppressNextRowPressRef.current = null;
+                  return;
+                }
                 if (selecting) {
                   toggleSelected(item.id);
                   return;
                 }
                 router.push({
-                  pathname: "/dialog/[id]",
-                  params: { id: item.id, name: item.name },
+                  pathname: "/capsule/[id]",
+                  params: { id: item.id },
                 } as unknown as Href);
               }}
               onLongPress={
@@ -259,6 +267,16 @@ export function CapsuleListScreen() {
           return (
             <SwipeToDeleteRow
               openRegistryRef={openSwipeRef}
+              onEditPress={() => {
+                suppressNextRowPressRef.current = {
+                  id: item.id,
+                  untilMs: Date.now() + 800,
+                };
+                router.push({
+                  pathname: "/capsule/edit/[id]",
+                  params: { id: item.id },
+                } as unknown as Href);
+              }}
               onDeletePress={() =>
                 confirmDeleteIds([item.id], item.name)
               }

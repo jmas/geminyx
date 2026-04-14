@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as yup from "yup";
+import { useKeyboardHeight } from "hooks/useKeyboardHeight";
 import { systemBlueForScheme } from "lib/theme/appColors";
 
 export type CapsuleFormValues = {
@@ -77,6 +78,10 @@ export type CapsuleFormProps = {
   palette: CapsuleFormPalette;
   scheme: "light" | "dark" | null | undefined;
   isPending: boolean;
+  initialValues?: CapsuleFormValues;
+  submitLabel?: string;
+  /** Use `useHeaderHeight()` when the form sits under a navigation header. */
+  keyboardVerticalOffset?: number;
   onCancel: () => void;
   onSubmit: (
     values: CapsuleFormValues,
@@ -88,15 +93,23 @@ export function CapsuleForm({
   palette,
   scheme,
   isPending,
+  initialValues = capsuleFormEmptyValues,
+  submitLabel = "Add",
   onCancel,
   onSubmit,
 }: CapsuleFormProps) {
   const insets = useSafeAreaInsets();
+  const keyboardHeight = useKeyboardHeight();
   const submitSpinnerColor = systemBlueForScheme(scheme);
+  const bottomPad = Math.max(insets.bottom, 12);
+  const footerLift = keyboardHeight > 0 ? Math.max(0, keyboardHeight - insets.bottom) : 0;
+  const scrollBottomPad =
+    16 + styles.actions.paddingTop + ACTION_ROW_HEIGHT + bottomPad;
 
   return (
     <Formik<CapsuleFormValues>
-      initialValues={capsuleFormEmptyValues}
+      enableReinitialize
+      initialValues={initialValues}
       validationSchema={capsuleFormValidationSchema}
       onSubmit={onSubmit}
     >
@@ -109,10 +122,10 @@ export function CapsuleForm({
         handleSubmit,
         isSubmitting,
       }) => (
-        <>
+        <View style={styles.root}>
           <ScrollView
             style={styles.scroll}
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollBottomPad }]}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
           >
@@ -224,7 +237,8 @@ export function CapsuleForm({
               styles.actions,
               {
                 borderTopColor: palette.separator,
-                paddingBottom: Math.max(insets.bottom, 12),
+                paddingBottom: bottomPad,
+                marginBottom: footerLift,
                 backgroundColor: palette.background,
               },
             ]}
@@ -238,9 +252,7 @@ export function CapsuleForm({
               ]}
               accessibilityLabel="Cancel"
             >
-              <Text
-                style={[styles.actionLabel, { color: palette.cancelLabel }]}
-              >
+              <Text style={[styles.actionLabel, { color: palette.cancelLabel }]}>
                 Cancel
               </Text>
             </Pressable>
@@ -251,7 +263,7 @@ export function CapsuleForm({
                 styles.actionBtn,
                 pressed && { opacity: 0.55 },
               ]}
-              accessibilityLabel="Add capsule"
+              accessibilityLabel={`${submitLabel} capsule`}
             >
               {isSubmitting || isPending ? (
                 <ActivityIndicator color={submitSpinnerColor} />
@@ -265,12 +277,12 @@ export function CapsuleForm({
                     },
                   ]}
                 >
-                  Add
+                  {submitLabel}
                 </Text>
               )}
             </Pressable>
           </View>
-        </>
+        </View>
       )}
     </Formik>
   );
@@ -295,13 +307,17 @@ function FieldBlock({
   );
 }
 
+const ACTION_ROW_HEIGHT = 44;
+
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   scroll: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 16,
   },
   fieldBlock: {
     marginTop: 14,

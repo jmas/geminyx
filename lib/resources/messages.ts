@@ -5,14 +5,8 @@ import type {
   GetListParams,
 } from "@refinedev/core";
 import type { DialogMessage } from "lib/models/dialogMessage";
+import { messagesRepo } from "repositories";
 import type { SqliteResourceAdapter } from "lib/sqlite/resourceAdapterTypes";
-import {
-  countMessagesForDialog,
-  fetchMessages,
-  fetchMessagesBeforeCursor,
-  fetchMessagesRecent,
-  insertMessage,
-} from "lib/sqlite/queries";
 import { logDialogMessage } from "utils/dialogMessageLog";
 
 export const RESOURCE = "messages" as const;
@@ -30,24 +24,6 @@ export type MessagesPagingMeta =
     };
 
 export type { DialogMessage } from "lib/models/dialogMessage";
-
-function demoMessage(
-  id: string,
-  body: string,
-  sentAt: string,
-  isOutgoing: boolean,
-  response?: Pick<DialogMessage, "status" | "meta">,
-): DialogMessage {
-  return {
-    id,
-    body,
-    contentLength: new TextEncoder().encode(body).length,
-    sentAt,
-    isOutgoing,
-    requestPath: "",
-    ...response,
-  };
-}
 
 function eqFilterValue(
   filters: CrudFilter[] | undefined,
@@ -105,15 +81,15 @@ export const sqliteAdapter: SqliteResourceAdapter = {
       meta as { messagesPaging?: MessagesPagingMeta } | undefined
     )?.messagesPaging;
     if (paging) {
-      const total = await countMessagesForDialog(dialogId);
+      const total = await messagesRepo.countForDialog(dialogId);
       if (paging.mode === "recent") {
-        const rows = await fetchMessagesRecent(dialogId, paging.limit);
+        const rows = await messagesRepo.listRecentForDialog(dialogId, paging.limit);
         return {
           data: rows as unknown as TData[],
           total,
         };
       }
-      const rows = await fetchMessagesBeforeCursor(
+      const rows = await messagesRepo.listBeforeCursorForDialog(
         dialogId,
         paging.cursor,
         paging.limit,
@@ -123,7 +99,7 @@ export const sqliteAdapter: SqliteResourceAdapter = {
         total,
       };
     }
-    const rows = await fetchMessages(dialogId);
+    const rows = await messagesRepo.listForDialog(dialogId);
     return {
       data: rows as unknown as TData[],
       total: rows.length,
@@ -164,7 +140,7 @@ export const sqliteAdapter: SqliteResourceAdapter = {
       v.blobBodyBase64 != null && v.blobBodyBase64.length > 0
         ? base64ToUint8Array(v.blobBodyBase64)
         : undefined;
-    const saved = await insertMessage(v.dialog_id, message, blobPayload);
+    const saved = await messagesRepo.insert(v.dialog_id, message, blobPayload);
     logDialogMessage("sqlite.message.create.done", {
       dialogId: v.dialog_id,
       id: saved.id,
@@ -178,47 +154,3 @@ export const sqliteAdapter: SqliteResourceAdapter = {
     return { data: saved as unknown as TData };
   },
 };
-
-const baseTime = Date.now();
-
-function at(minutesAgo: number): string {
-  return new Date(baseTime - minutesAgo * 60_000).toISOString();
-}
-
-const BY_CAPSULE: Record<string, DialogMessage[]> = {
-  "1": [
-    demoMessage("1-1", "Hey! Are we still on for later?", at(120), false),
-    demoMessage("1-2", "Yes — 7 works for me.", at(118), true),
-    demoMessage("1-3", "Perfect. I’ll send the address in a bit.", at(115), false),
-    demoMessage("1-4", "Thanks!", at(114), true),
-    demoMessage("1-5", "No worries. See you then 👋", at(2), false),
-  ],
-  "2": [
-    demoMessage("2-1", "Did you get a chance to review the doc?", at(400), true),
-    demoMessage("2-2", "Yep, left a few comments. Mostly small tweaks.", at(395), false),
-    demoMessage("2-3", "Amazing, I’ll go through them tonight.", at(390), true),
-  ],
-  "3": [
-    demoMessage("3-1", "Coffee tomorrow?", at(2000), false),
-    demoMessage("3-2", "Sure — same place as last time?", at(1990), true),
-    demoMessage("3-3", "Works for me. 9:30?", at(1985), false),
-    demoMessage("3-4", "Locked in.", at(1980), true),
-  ],
-  "4": [
-    demoMessage("4-1", "Happy birthday 🎂", at(5000), true),
-    demoMessage("4-2", "Thank you!! That really made my day.", at(4990), false),
-  ],
-  "5": [
-    demoMessage("5-1", "Long time no chat — how have you been?", at(8000), false),
-    demoMessage(
-      "5-2",
-      "Busy but good! We should catch up properly soon.",
-      at(7995),
-      true,
-    ),
-  ],
-};
-
-/** Same as in-memory demo map; used to seed SQLite on first app launch. */
-export const demoDialogMessagesByCapsule: Record<string, DialogMessage[]> =
-  BY_CAPSULE;

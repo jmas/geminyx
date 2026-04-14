@@ -1,6 +1,12 @@
 import { useCreate, useInvalidate, type HttpError } from "@refinedev/core";
 import { useRouter } from "expo-router";
-import { fetchGeminiParsed } from "gemini-fetcher";
+import GeminiFetcher, {
+  fetchGeminiParsed,
+  type GeminiFetchTlsIdentity,
+} from "gemini-fetcher";
+import { generateLocalClientPkcs12OffThread } from "lib/account/generateLocalClientPkcs12OffThread";
+import type { Capsule } from "lib/models/capsule";
+import type { DialogMessage } from "lib/models/dialogMessage";
 import {
   geminiRequestPathForMessage,
   isCrossOriginGeminiUrl,
@@ -14,8 +20,6 @@ import {
   suggestedCapsuleNameFromGeminiUrl,
   uint8ArrayToBase64,
 } from "lib/models/gemini";
-import type { Capsule } from "lib/models/capsule";
-import type { DialogMessage } from "lib/models/dialogMessage";
 import { RESOURCES } from "lib/refineDataProvider";
 import type { CapsuleCreateVariables } from "lib/resources/capsules";
 import type { MessageCreateVariables } from "lib/resources/messages";
@@ -28,7 +32,28 @@ import {
   type SetStateAction,
 } from "react";
 import { Alert } from "react-native";
+import { accountsRepo, dialogsRepo } from "repositories";
 import { logDialogMessage, summarizeRequestUrl } from "utils/dialogMessageLog";
+
+const CLIENT_CERT_GENERATE_TIMEOUT_MS = 150_000; // 2.5 minutes
+
+async function withTimeout<T>(
+  p: Promise<T>,
+  timeoutMs: number,
+  message: string,
+): Promise<T> {
+  let t: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      p,
+      new Promise<T>((_, reject) => {
+        t = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (t) clearTimeout(t);
+  }
+}
 
 export type SubmitMessageFlowOptions = {
   fetchUrl?: string;
@@ -48,11 +73,65 @@ export type SubmitMessageFlowOptions = {
 export type UseMessageCreateParams = {
   dialogId: string;
   capsuleUrl: string;
+  activeAccountId?: string;
+  activeAccountName?: string;
+  activeAccountHasClientCert?: boolean;
+  dialogClientCertShareAllowed?: boolean;
+  /** From the active account: PKCS#12 client cert for Gemini TLS (optional). */
+  geminiTls?: GeminiFetchTlsIdentity | null;
+  onClientCertGenerateStart?: () => void;
+  onClientCertGenerateEnd?: (result: { ok: boolean }) => void;
   messagesRef: MutableRefObject<DialogMessage[]>;
   setMessages: Dispatch<SetStateAction<DialogMessage[]>>;
   /** e.g. scroll list to end after optimistic append */
   scheduleScrollToEnd: () => void;
 };
+
+function isGeminiClientCertRequiredStatus(code: number): boolean {
+  return code >= 60 && code <= 69;
+}
+
+function isGeminiErrorStatus(code: number): boolean {
+  return code >= 40 && code <= 69;
+}
+
+function errorBodyFromGeminiResponse(parsed: {
+  statusCode: number;
+  meta: string;
+  body: string;
+}): string {
+  const metaTrim = parsed.meta.trim();
+  const bodyTrim = parsed.body.trim();
+  const parts = [metaTrim, bodyTrim].filter((p) => p.length > 0);
+  if (parts.length > 0) return parts.join("\n\n");
+  return `Request failed (${parsed.statusCode}).`;
+}
+
+function geminiIdentityLabelForAccountId(accountId: string): string {
+  return `geminyx.gemini.identity.${accountId}`;
+}
+
+function confirmAsync(opts: {
+  title: string;
+  message: string;
+  confirmText?: string;
+  cancelText?: string;
+}): Promise<boolean> {
+  return new Promise((resolve) => {
+    Alert.alert(opts.title, opts.message, [
+      {
+        text: opts.cancelText ?? "Cancel",
+        style: "cancel",
+        onPress: () => resolve(false),
+      },
+      {
+        text: opts.confirmText ?? "OK",
+        style: "default",
+        onPress: () => resolve(true),
+      },
+    ]);
+  });
+}
 
 function newLocalMessageId(prefix: "out" | "in"): string {
   const c = globalThis.crypto;
@@ -67,6 +146,13 @@ function newLocalMessageId(prefix: "out" | "in"): string {
 export function useMessageCreate({
   dialogId,
   capsuleUrl,
+  activeAccountId,
+  activeAccountName,
+  activeAccountHasClientCert,
+  dialogClientCertShareAllowed,
+  geminiTls,
+  onClientCertGenerateStart,
+  onClientCertGenerateEnd,
   messagesRef,
   setMessages,
   scheduleScrollToEnd,
@@ -154,7 +240,8 @@ export function useMessageCreate({
             }
           : undefined,
         outgoingBodyChars: trimmedDisplayBody.length,
-        outgoingContentBytes: new TextEncoder().encode(trimmedDisplayBody).length,
+        outgoingContentBytes: new TextEncoder().encode(trimmedDisplayBody)
+          .length,
       });
 
       let requestUrl: string;
@@ -179,7 +266,7 @@ export function useMessageCreate({
         Alert.alert("Request", "Could not build request URL.");
         return;
       }
-      const requestPath = geminiRequestPathForMessage(url, requestUrl);
+      const outgoingRequestPath = geminiRequestPathForMessage(url, requestUrl);
       const outgoingId = newLocalMessageId("out");
       const sentAt = new Date().toISOString();
       const contentLength = new TextEncoder().encode(trimmedDisplayBody).length;
@@ -196,7 +283,7 @@ export function useMessageCreate({
         contentLength,
         sentAt,
         isOutgoing: true,
-        requestPath,
+        requestPath: outgoingRequestPath,
         ...(trimmedDisplayBody.length > 0 ? { body: trimmedDisplayBody } : {}),
       };
 
@@ -212,7 +299,151 @@ export function useMessageCreate({
           outgoingId,
           requestSummary: summarizeRequestUrl(requestUrl),
         });
-        const parsed = await fetchGeminiParsed(requestUrl);
+        let fetchedUrl = requestUrl;
+        // Keep a flow-local TLS value so we can immediately reuse a newly generated cert
+        // (and for redirect follow-ups), even if outer account state is still stale.
+        let tlsForFlow: GeminiFetchTlsIdentity | undefined =
+          geminiTls ?? undefined;
+        let parsed = await fetchGeminiParsed(fetchedUrl, tlsForFlow);
+
+        // Client-cert flow:
+        // - cert is stored at the account level (PKCS#12 in DB + optional Keychain identity)
+        // - when the server returns 6X, generate if missing (once per account)
+        // - ask once per dialog whether we may share/use it with this server (TLS client auth)
+        // - if approved, retry request with cert
+        if (
+          isGeminiClientCertRequiredStatus(parsed.statusCode) &&
+          activeAccountId
+        ) {
+          const label = geminiIdentityLabelForAccountId(activeAccountId);
+
+          let p12 = tlsForFlow?.pkcs12Base64?.trim() ?? "";
+          let passphrase = tlsForFlow?.passphrase ?? "";
+
+          // Avoid relying on potentially stale `activeAccountHasClientCert` from the screen.
+          // If we have no PKCS#12 in-hand for this flow, treat it as missing.
+          if (!p12.trim()) {
+            const ok = await confirmAsync({
+              title: "Client certificate required",
+              message:
+                "This capsule requires a client certificate. Generate one for this account now?",
+              confirmText: "Generate",
+              cancelText: "Not now",
+            });
+            if (ok) {
+              onClientCertGenerateStart?.();
+              // Give React a brief window to paint the modal and start the native-driven
+              // progress animation before we begin CPU-heavy work.
+              await new Promise<void>((resolve) => setTimeout(resolve, 120));
+              try {
+                const generated = await withTimeout(
+                  generateLocalClientPkcs12OffThread({
+                    commonName: activeAccountName?.trim() || "Geminyx Client",
+                  }),
+                  CLIENT_CERT_GENERATE_TIMEOUT_MS,
+                  "Certificate generation timed out (2.5 minutes).",
+                );
+                p12 = generated.pkcs12Base64;
+                passphrase = generated.passphrase;
+                await accountsRepo.patch(activeAccountId, {
+                  geminiClientP12Base64: p12,
+                  geminiClientP12Passphrase: passphrase,
+                });
+                await invalidate({
+                  resource: RESOURCES.accounts,
+                  invalidates: ["list"],
+                });
+                if (GeminiFetcher?.storeIdentityFromPkcs12) {
+                  await GeminiFetcher.storeIdentityFromPkcs12({
+                    identityLabel: label,
+                    pkcs12Base64: p12,
+                    passphrase,
+                  });
+                }
+                tlsForFlow = {
+                  identityLabel: label,
+                  pkcs12Base64: p12,
+                  passphrase,
+                };
+                onClientCertGenerateEnd?.({ ok: true });
+              } catch (certErr) {
+                logDialogMessage("gemini.client_cert.generate.error", {
+                  dialogId,
+                  flowKind,
+                  error:
+                    certErr instanceof Error
+                      ? certErr.message
+                      : String(certErr),
+                });
+                Alert.alert(
+                  "Client certificate",
+                  certErr instanceof Error
+                    ? certErr.message
+                    : "Could not generate a client certificate.",
+                );
+                onClientCertGenerateEnd?.({ ok: false });
+              }
+            }
+          }
+
+          const nowHasCert = !!p12.trim();
+          let shareAllowed = dialogClientCertShareAllowed === true;
+          if (nowHasCert && !shareAllowed) {
+            const okToShare = await confirmAsync({
+              title: "Share certificate with server?",
+              message:
+                "To access this capsule, Geminyx must present your account’s client certificate during the TLS handshake. Allow this for this dialog?",
+              confirmText: "Allow",
+              cancelText: "Cancel",
+            });
+            if (okToShare) {
+              await dialogsRepo.setClientCertShareAllowed(dialogId, true);
+              shareAllowed = true;
+            }
+          }
+
+          // Retry only if allowed; otherwise keep the original 6X response (it will be persisted as-is).
+          if (nowHasCert) {
+            const allowed =
+              shareAllowed ||
+              (await (async () => {
+                const d = await dialogsRepo.getById(dialogId);
+                return d?.clientCertShareAllowed === true;
+              })());
+            if (allowed) {
+              tlsForFlow = {
+                identityLabel: label,
+                pkcs12Base64: p12,
+                passphrase,
+              };
+              parsed = await fetchGeminiParsed(fetchedUrl, tlsForFlow);
+            }
+          }
+        }
+
+        // Redirect follow: if the server redirects within the same capsule/origin,
+        // follow and fetch the final URL so we persist the final content + URL.
+        if (capsuleUrl.trim().length > 0) {
+          for (
+            let i = 0;
+            i < 8 && isGeminiRedirectStatus(parsed.statusCode);
+            i++
+          ) {
+            const metaTrim = parsed.meta.trim();
+            const target = resolveGeminiRedirectTarget(metaTrim, fetchedUrl);
+            if (!/^gemini:\/\//i.test(target)) break;
+
+            // If redirect goes to another Gemini origin, keep existing behavior
+            // (create/open another capsule) instead of silently fetching cross-origin.
+            if (isCrossOriginGeminiUrl(target, capsuleUrl)) {
+              break;
+            }
+
+            fetchedUrl = target;
+            parsed = await fetchGeminiParsed(fetchedUrl, tlsForFlow);
+          }
+        }
+
         logDialogMessage("gemini.fetch.parsed", {
           dialogId,
           flowKind,
@@ -224,6 +455,7 @@ export function useMessageCreate({
         });
 
         const metaTrim = parsed.meta.trim();
+        const requestPath = geminiRequestPathForMessage(url, fetchedUrl);
 
         logDialogMessage("persist.outgoing.begin", {
           dialogId,
@@ -234,11 +466,12 @@ export function useMessageCreate({
           values: {
             dialog_id: dialogId,
             id: outgoingId,
-            body: trimmedDisplayBody.length > 0 ? trimmedDisplayBody : undefined,
+            body:
+              trimmedDisplayBody.length > 0 ? trimmedDisplayBody : undefined,
             contentLength,
             sentAt,
             isOutgoing: true,
-            requestPath,
+            requestPath: outgoingRequestPath,
           },
         });
         logDialogMessage("persist.outgoing.done", {
@@ -256,7 +489,7 @@ export function useMessageCreate({
           isGeminiRedirectStatus(parsed.statusCode) &&
           capsuleUrl.trim().length > 0
         ) {
-          const target = resolveGeminiRedirectTarget(metaTrim, requestUrl);
+          const target = resolveGeminiRedirectTarget(metaTrim, fetchedUrl);
           if (
             /^gemini:\/\//i.test(target) &&
             isCrossOriginGeminiUrl(target, capsuleUrl)
@@ -285,7 +518,10 @@ export function useMessageCreate({
                   id: noticeId,
                   sentAt: noticeSentAt,
                   isOutgoing: false,
-                  requestPath: geminiRequestPathForMessage(capsuleUrl, requestUrl),
+                  requestPath: geminiRequestPathForMessage(
+                    capsuleUrl,
+                    fetchedUrl,
+                  ),
                   body: noticeBody,
                   contentLength: noticeLen,
                 },
@@ -338,6 +574,9 @@ export function useMessageCreate({
         const replySentAt = new Date().toISOString();
 
         let incomingBody = parsed.body;
+        if (isGeminiErrorStatus(parsed.statusCode)) {
+          incomingBody = errorBodyFromGeminiResponse(parsed);
+        }
         if (isGeminiInputStatus(parsed.statusCode)) {
           const parts: string[] = [];
           if (metaTrim.length > 0) {
@@ -360,7 +599,10 @@ export function useMessageCreate({
                 flowKind,
                 summary: summarizeRequestUrl(promptUrl),
               });
-              const promptPage = await fetchGeminiParsed(promptUrl);
+              const promptPage = await fetchGeminiParsed(
+                promptUrl,
+                geminiTls ?? undefined,
+              );
               logDialogMessage("gemini.input.prompt_fetch.done", {
                 dialogId,
                 flowKind,
@@ -523,23 +765,69 @@ export function useMessageCreate({
           stack: e instanceof Error ? e.stack : undefined,
         });
         console.error("Message / Gemini flow failed", e);
-        setMessages((prev) => prev.filter((m) => m.id !== outgoingId));
-        Alert.alert(
-          "Could not complete request",
-          e instanceof Error ? e.message : "Unknown error",
-        );
+        const errText = e instanceof Error ? e.message : String(e);
+        const replyId = newLocalMessageId("in");
+        const replySentAt = new Date().toISOString();
+        const body =
+          errText.trim().length > 0 ? errText.trim() : "Unknown error";
+        const replyContentLength = new TextEncoder().encode(body).length;
+        const optimisticIn: DialogMessage = {
+          id: replyId,
+          contentLength: replyContentLength,
+          sentAt: replySentAt,
+          isOutgoing: false,
+          requestPath: outgoingRequestPath,
+          body,
+          status: 50,
+        };
+        setMessages((prev) => [...prev, optimisticIn]);
+        scheduleScrollToEnd();
+
+        try {
+          const { data: savedIn } = await createMessage({
+            values: {
+              dialog_id: dialogId,
+              id: replyId,
+              body,
+              contentLength: replyContentLength,
+              sentAt: replySentAt,
+              isOutgoing: false,
+              requestPath: outgoingRequestPath,
+              status: 50,
+            },
+          });
+          setMessages((prev) =>
+            prev.map((m) => (m.id === replyId ? savedIn : m)),
+          );
+        } catch (persistErr) {
+          logDialogMessage("persist.error_reply.failed", {
+            dialogId,
+            flowKind,
+            outgoingId,
+            error:
+              persistErr instanceof Error
+                ? persistErr.message
+                : String(persistErr),
+          });
+        }
       } finally {
         flowBusyRef.current = false;
         setFlowPending(false);
       }
     },
     [
+      activeAccountId,
+      activeAccountName,
       capsuleUrl,
       createCapsule,
       createMessage,
       dialogId,
+      dialogClientCertShareAllowed,
+      geminiTls,
       invalidate,
       messagesRef,
+      onClientCertGenerateEnd,
+      onClientCertGenerateStart,
       router,
       scheduleScrollToEnd,
       setMessages,

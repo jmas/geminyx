@@ -80,6 +80,7 @@ export function MessageBodyFullModal({
             baseUrl={baseUrl}
             isOutgoing={false}
             incomingChrome={incomingGemtextChrome}
+            codeBlockTheme="terminal"
             linksDisabled={geminiLinksDisabled}
             onGemtextLink={handleGemtextLink}
           />

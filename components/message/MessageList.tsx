@@ -10,6 +10,8 @@ import {
 } from "react";
 import {
   ActivityIndicator,
+  Dimensions,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -18,6 +20,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
+import { avatarHueFromId, initialsFromName } from "utils/avatar";
 import { usePopupManager } from "react-popup-manager";
 import type { DialogMessage } from "lib/models/dialogMessage";
 import { MessageBodyFullModal } from "components/message/MessageBodyFullModal";
@@ -32,6 +35,7 @@ import {
   prepareTruncatedGemtextPreview,
   truncateMessageToLines,
 } from "utils/truncateMessageLines";
+import { MessageContextMenuBubble } from "components/message/MessageContextMenuBubble";
 
 export type MessageListPalette = {
   bubbleIncoming: string;
@@ -47,6 +51,13 @@ export type MessageListPalette = {
   viewFullBtnBg: string;
   viewFullBtnBorder: string;
   viewFullBtnLabel: string;
+};
+
+export type MessageListEmptyCapsule = {
+  capsuleId: string;
+  name: string;
+  description?: string;
+  avatarUrl?: string;
 };
 
 export type MessageListProps = {
@@ -66,6 +77,14 @@ export type MessageListProps = {
     linkLabel: string,
   ) => void;
   geminiLinksDisabled?: boolean;
+  /** Centered Telegram-style card when there are no messages yet. */
+  emptyCapsule?: MessageListEmptyCapsule;
+  /** Long-press context menu: Revisit / Revisit home (native UIMenu on iOS). */
+  onMessageRefetch?: (message: DialogMessage) => void;
+  /** Labels and SF Symbol for the context menu row (per message). */
+  getMessageRefetchMenuAction?: (
+    message: DialogMessage,
+  ) => { title: string; systemIcon: string };
 };
 
 export type MessageListHandle = {
@@ -77,10 +96,110 @@ const BLOB_REF_BODY = /^\[blob: ([^\]]+)\]$/;
 /** Pixels from the bottom of content to still count as "at bottom" (Telegram-like). */
 const NEAR_BOTTOM_THRESHOLD_PX = 80;
 
+function statusFallbackText(status: number): string {
+  if (status === 10) return "Input requested.";
+  if (status === 11) return "Sensitive input requested.";
+  if (status === 20) return "Success (empty response).";
+  if (status === 30 || status === 31) return `Redirect (${status}).`;
+  if (status >= 40 && status <= 49) return `Temporary failure (${status}).`;
+  if (status >= 50 && status <= 59) return `Permanent failure (${status}).`;
+  if (status >= 60 && status <= 69)
+    return `Client certificate required (${status}).`;
+  return `Response status ${status}.`;
+}
+
 type ViewFullMessageContext = {
   body: string;
   baseUrl: string;
 };
+
+const WINDOW_HEIGHT = Dimensions.get("window").height;
+
+function EmptyCapsuleCard({
+  capsule,
+  palette,
+}: {
+  capsule: MessageListEmptyCapsule;
+  palette: MessageListPalette;
+}) {
+  const hue = avatarHueFromId(capsule.capsuleId);
+  const initials = initialsFromName(capsule.name);
+  const desc = capsule.description?.trim();
+
+  return (
+    <View
+      style={[
+        styles.emptyCard,
+        {
+          backgroundColor: palette.bubbleIncoming,
+          borderColor: palette.viewFullBtnBorder,
+        },
+      ]}
+    >
+      <EmptyCapsuleAvatar
+        name={capsule.name}
+        uri={capsule.avatarUrl}
+        hue={hue}
+        initials={initials}
+      />
+      <Text
+        style={[styles.emptyCapsuleName, { color: palette.textIncoming }]}
+        numberOfLines={2}
+      >
+        {capsule.name}
+      </Text>
+      {desc ? (
+        <Text
+          style={[styles.emptyCapsuleDescription, { color: palette.timeIncoming }]}
+          numberOfLines={4}
+        >
+          {desc}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+function EmptyCapsuleAvatar({
+  uri,
+  hue,
+  initials,
+  name,
+}: {
+  uri?: string;
+  hue: number;
+  initials: string;
+  name: string;
+}) {
+  const [failed, setFailed] = useState(!uri);
+
+  useEffect(() => {
+    setFailed(!uri);
+  }, [uri]);
+
+  if (!failed && uri) {
+    return (
+      <Image
+        accessibilityLabel={`${name} avatar`}
+        source={{ uri }}
+        style={styles.emptyCapsuleAvatarImage}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+
+  return (
+    <View
+      style={[
+        styles.emptyCapsuleAvatarFallback,
+        { backgroundColor: `hsl(${hue}, 42%, 46%)` },
+      ]}
+      accessibilityLabel={`${name} avatar`}
+    >
+      <Text style={styles.emptyCapsuleAvatarInitials}>{initials}</Text>
+    </View>
+  );
+}
 
 function MessageBubble({
   message,
@@ -91,6 +210,8 @@ function MessageBubble({
   onGemtextLink,
   geminiLinksDisabled,
   onViewFull,
+  onMessageRefetch,
+  getMessageRefetchMenuAction,
 }: {
   message: DialogMessage;
   palette: MessageListPalette;
@@ -100,13 +221,33 @@ function MessageBubble({
   onGemtextLink?: (action: GemtextLinkAction, linkLabel: string) => void;
   geminiLinksDisabled?: boolean;
   onViewFull: (ctx: ViewFullMessageContext) => void;
+  onMessageRefetch?: (message: DialogMessage) => void;
+  getMessageRefetchMenuAction?: (
+    message: DialogMessage,
+  ) => { title: string; systemIcon: string };
 }) {
   const outgoing = message.isOutgoing;
-  const bubbleBg = outgoing ? palette.bubbleOutgoing : palette.bubbleIncoming;
+  const isError =
+    !outgoing && message.status !== undefined && message.status >= 40;
+  const bubbleBg = outgoing
+    ? palette.bubbleOutgoing
+    : isError
+      ? "rgba(220, 38, 38, 0.18)"
+      : palette.bubbleIncoming;
   const textColor = outgoing ? palette.textOutgoing : palette.textIncoming;
   const linkColor = outgoing ? palette.linkOutgoing : palette.linkIncoming;
   const timeColor = outgoing ? palette.timeOutgoing : palette.timeIncoming;
   const bodyTrim = message.body?.trim() ?? "";
+  const metaTrim = message.meta?.trim() ?? "";
+  const displayBody =
+    bodyTrim.length > 0
+      ? message.body ?? ""
+      : metaTrim.length > 0
+        ? metaTrim
+        : message.status !== undefined
+          ? statusFallbackText(message.status)
+          : "";
+  const displayBodyTrim = displayBody.trim();
   const blobRefMatch = BLOB_REF_BODY.exec(bodyTrim);
   const isBlobPointer =
     Boolean(
@@ -128,13 +269,48 @@ function MessageBubble({
     message,
   );
   const { preview: gemtextPreview, truncated: gemtextTruncated } =
-    truncateMessageToLines(message.body ?? "");
+    truncateMessageToLines(displayBody);
   const gemtextDisplayBody = gemtextTruncated
     ? prepareTruncatedGemtextPreview(gemtextPreview, true)
-    : (message.body ?? "");
+    : displayBody;
 
   const showViewFullUnderBubble =
-    !isBlobPointer && bodyTrim.length > 0 && gemtextTruncated;
+    !isBlobPointer && displayBodyTrim.length > 0 && gemtextTruncated;
+
+  const refetchMenu =
+    getMessageRefetchMenuAction?.(message) ?? {
+      title: "Revisit",
+      systemIcon: "arrow.clockwise",
+    };
+
+  const bubbleCard = (
+    <View style={[styles.bubble, { backgroundColor: bubbleBg }]}>
+      {isBlobPointer ? (
+        <Text selectable style={[styles.messageText, { color: textColor }]}>
+          [blob: {message.blobId}] · {message.contentLength} bytes
+        </Text>
+      ) : displayBodyTrim.length > 0 ? (
+        <GemtextMessageBody
+          body={gemtextDisplayBody}
+          textColor={textColor}
+          linkColor={linkColor}
+          baseUrl={docBaseUrl}
+          isOutgoing={outgoing}
+          incomingChrome={incomingGemtextChrome}
+          codeBlockTheme="terminal"
+          linksDisabled={geminiLinksDisabled}
+          onGemtextLink={onGemtextLink}
+        />
+      ) : placeholder.length > 0 ? (
+        <Text selectable style={[styles.messageText, { color: textColor }]}>
+          {placeholder}
+        </Text>
+      ) : null}
+      <Text selectable style={[styles.timeText, { color: timeColor }]}>
+        {formatMessageTime(message.sentAt)}
+      </Text>
+    </View>
+  );
 
   return (
     <View
@@ -150,31 +326,18 @@ function MessageBubble({
           outgoing ? styles.bubbleStackOutgoing : styles.bubbleStackIncoming,
         ]}
       >
-        <View style={[styles.bubble, { backgroundColor: bubbleBg }]}>
-          {isBlobPointer ? (
-            <Text selectable style={[styles.messageText, { color: textColor }]}>
-              [blob: {message.blobId}] · {message.contentLength} bytes
-            </Text>
-          ) : bodyTrim.length > 0 ? (
-            <GemtextMessageBody
-              body={gemtextDisplayBody}
-              textColor={textColor}
-              linkColor={linkColor}
-              baseUrl={docBaseUrl}
-              isOutgoing={outgoing}
-              incomingChrome={incomingGemtextChrome}
-              linksDisabled={geminiLinksDisabled}
-              onGemtextLink={onGemtextLink}
-            />
-          ) : placeholder.length > 0 ? (
-            <Text selectable style={[styles.messageText, { color: textColor }]}>
-              {placeholder}
-            </Text>
-          ) : null}
-          <Text selectable style={[styles.timeText, { color: timeColor }]}>
-            {formatMessageTime(message.sentAt)}
-          </Text>
-        </View>
+        {onMessageRefetch ? (
+          <MessageContextMenuBubble
+            disabled={geminiLinksDisabled}
+            actionTitle={refetchMenu.title}
+            systemIcon={refetchMenu.systemIcon}
+            onRefetch={() => onMessageRefetch(message)}
+          >
+            {bubbleCard}
+          </MessageContextMenuBubble>
+        ) : (
+          bubbleCard
+        )}
         {showViewFullUnderBubble ? (
           <Pressable
             onPress={() =>
@@ -221,6 +384,9 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       geminiLinkBaseUrl,
       onGemtextLink,
       geminiLinksDisabled,
+      emptyCapsule,
+      onMessageRefetch,
+      getMessageRefetchMenuAction,
     },
     ref,
   ) {
@@ -378,12 +544,21 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
       [],
     );
 
+    const showEmptyCapsule =
+      !loadingInitial &&
+      messages.length === 0 &&
+      emptyCapsule != null &&
+      emptyCapsule.name.trim().length > 0;
+
     return (
       <View style={styles.listWrap}>
         <ScrollView
           ref={listRef}
           style={styles.listScroll}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            showEmptyCapsule ? styles.listContentWhenEmpty : null,
+          ]}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
           onContentSizeChange={onContentSizeChange}
@@ -393,6 +568,16 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
           {loadingOlder ? (
             <View style={styles.listHeaderLoading}>
               <ActivityIndicator color={palette.icon} />
+            </View>
+          ) : null}
+          {showEmptyCapsule ? (
+            <View
+              style={[
+                styles.emptyRoot,
+                { minHeight: Math.max(280, WINDOW_HEIGHT * 0.48) },
+              ]}
+            >
+              <EmptyCapsuleCard capsule={emptyCapsule} palette={palette} />
             </View>
           ) : null}
           {messages.map((item, index) => (
@@ -409,6 +594,8 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
               onGemtextLink={onGemtextLink}
               geminiLinksDisabled={geminiLinksDisabled}
               onViewFull={openFullMessageModal}
+              onMessageRefetch={onMessageRefetch}
+              getMessageRefetchMenuAction={getMessageRefetchMenuAction}
             />
           ))}
         </ScrollView>
@@ -466,6 +653,61 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingBottom: 20,
     flexGrow: 1,
+  },
+  listContentWhenEmpty: {
+    justifyContent: "center",
+  },
+  emptyRoot: {
+    flexGrow: 1,
+    width: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 14,
+  },
+  emptyCard: {
+    alignItems: "center",
+    maxWidth: 320,
+    width: "100%",
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth * 2,
+    paddingHorizontal: 28,
+    paddingVertical: 28,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  emptyCapsuleAvatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  emptyCapsuleAvatarFallback: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyCapsuleAvatarInitials: {
+    color: "#ffffff",
+    fontSize: 28,
+    fontWeight: "600",
+  },
+  emptyCapsuleName: {
+    marginTop: 16,
+    fontSize: 20,
+    fontWeight: "600",
+    textAlign: "center",
+    letterSpacing: -0.35,
+  },
+  emptyCapsuleDescription: {
+    marginTop: 8,
+    fontSize: 15,
+    lineHeight: 21,
+    textAlign: "center",
+    letterSpacing: -0.2,
   },
   listHeaderLoading: {
     paddingVertical: 8,

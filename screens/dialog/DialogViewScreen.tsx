@@ -1,13 +1,39 @@
+import { Ionicons } from "@expo/vector-icons";
+import { useHeaderHeight } from "@react-navigation/elements";
+import { useNavigation } from "@react-navigation/native";
 import {
   useCreate,
   useDataProvider,
   useInvalidate,
+  useList,
   useOne,
   type HttpError,
 } from "@refinedev/core";
-import { useHeaderHeight } from "@react-navigation/elements";
-import { useNavigation } from "@react-navigation/native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
+import type { GemtextLinkAction } from "components/message/GemtextMessageBody";
+import { MessageForm } from "components/message/MessageForm";
+import {
+  MessageList,
+  type MessageListEmptyCapsule,
+  type MessageListHandle,
+} from "components/message/MessageList";
+import { BlockingProgressModal } from "components/ui/BlockingProgressModal";
+import { useLocalSearchParams, useRouter, type Href } from "expo-router";
+import { useMessageCreate } from "hooks/message/useMessageCreate";
+import type { Account } from "lib/models/account";
+import type { Capsule } from "lib/models/capsule";
+import type { Dialog } from "lib/models/dialog";
+import type { DialogMessage } from "lib/models/dialogMessage";
+import {
+  geminiDocumentBaseUrlForMessage,
+  geminiOriginsMatch,
+  isCapsuleRootRequestPath,
+  suggestedCapsuleNameFromGeminiUrl,
+} from "lib/models/gemini";
+import { RESOURCES } from "lib/refineDataProvider";
+import type { CapsuleCreateVariables } from "lib/resources/capsules";
+import { MESSAGES_PAGE_SIZE } from "lib/resources/messages";
+import { appColors, navigationChromeForScheme } from "lib/theme/appColors";
 import {
   useCallback,
   useEffect,
@@ -16,7 +42,6 @@ import {
   useRef,
   useState,
 } from "react";
-import { Ionicons } from "@expo/vector-icons";
 import {
   ActivityIndicator,
   Alert,
@@ -30,27 +55,8 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { GemtextLinkAction } from "components/message/GemtextMessageBody";
-import { MessageForm } from "components/message/MessageForm";
-import {
-  MessageList,
-  type MessageListHandle,
-} from "components/message/MessageList";
-import {
-  geminiOriginsMatch,
-  geminiRequestPathForMessage,
-  suggestedCapsuleNameFromGeminiUrl,
-} from "lib/models/gemini";
-import type { Capsule } from "lib/models/capsule";
-import type { Dialog } from "lib/models/dialog";
-import type { DialogMessage } from "lib/models/dialogMessage";
-import { MESSAGES_PAGE_SIZE } from "lib/resources/messages";
-import { RESOURCES } from "lib/refineDataProvider";
-import type { CapsuleCreateVariables } from "lib/resources/capsules";
 import { logDialogMessage } from "utils/dialogMessageLog";
-import { useMessageCreate } from "hooks/message/useMessageCreate";
 import { firstParam } from "utils/searchParams";
-import { appColors, navigationChromeForScheme } from "lib/theme/appColors";
 
 const colors = {
   light: {
@@ -124,6 +130,11 @@ export function DialogViewScreen() {
   const [messages, setMessages] = useState<DialogMessage[]>([]);
   const [loadingInitial, setLoadingInitial] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [certGenVisible, setCertGenVisible] = useState(false);
+  const certGenTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const certGenStartedAtRef = useRef<number | null>(null);
+  const CERT_GEN_TIMEOUT_MS = 150_000; // 2.5 minutes
+  const [certGenProgressKey, setCertGenProgressKey] = useState(0);
 
   const dataProvider = useDataProvider();
   const getList = useMemo(() => dataProvider().getList, [dataProvider]);
@@ -167,8 +178,7 @@ export function DialogViewScreen() {
         },
       });
       setMessages(data);
-      const more =
-        data.length === MESSAGES_PAGE_SIZE && total > data.length;
+      const more = data.length === MESSAGES_PAGE_SIZE && total > data.length;
       hasMoreOlderRef.current = more;
     } finally {
       setLoadingInitial(false);
@@ -226,6 +236,29 @@ export function DialogViewScreen() {
     queryOptions: { enabled: !!dialogId },
   });
 
+  const { result: activeAccountResult } = useList<Account>({
+    resource: RESOURCES.accounts,
+    filters: [
+      {
+        field: "is_active",
+        operator: "eq",
+        value: true,
+      },
+    ],
+    pagination: { mode: "off" },
+  });
+
+  const geminiTls = useMemo(() => {
+    const acc = activeAccountResult.data?.[0];
+    const b64 = acc?.geminiClientP12Base64?.trim();
+    if (!b64) return undefined;
+    return {
+      identityLabel: `geminyx.gemini.identity.${acc.id}`,
+      pkcs12Base64: b64,
+      passphrase: acc?.geminiClientP12Passphrase ?? "",
+    };
+  }, [activeAccountResult.data]);
+
   const capsuleUrl = dialogRow?.capsule?.url?.trim() ?? "";
 
   const scheduleScrollToEnd = useCallback(() => {
@@ -237,10 +270,79 @@ export function DialogViewScreen() {
   const { flowPending, submitMessageFlow } = useMessageCreate({
     dialogId,
     capsuleUrl,
+    activeAccountId: activeAccountResult.data?.[0]?.id,
+    activeAccountName: activeAccountResult.data?.[0]?.name,
+    activeAccountHasClientCert:
+      !!activeAccountResult.data?.[0]?.geminiClientP12Base64?.trim(),
+    dialogClientCertShareAllowed: dialogRow?.clientCertShareAllowed ?? false,
+    geminiTls,
+    onClientCertGenerateStart: () => {
+      if (certGenTimerRef.current) {
+        clearInterval(certGenTimerRef.current);
+        certGenTimerRef.current = null;
+      }
+      setCertGenVisible(true);
+      const startedAt = Date.now();
+      certGenStartedAtRef.current = startedAt;
+      setCertGenProgressKey((k) => k + 1);
+    },
+    onClientCertGenerateEnd: ({ ok }) => {
+      if (certGenTimerRef.current) {
+        clearInterval(certGenTimerRef.current);
+        certGenTimerRef.current = null;
+      }
+      certGenStartedAtRef.current = null;
+      setTimeout(
+        () => {
+          setCertGenVisible(false);
+        },
+        ok ? 450 : 0,
+      );
+    },
     messagesRef,
     setMessages,
     scheduleScrollToEnd,
   });
+
+  useEffect(() => {
+    return () => {
+      if (certGenTimerRef.current) {
+        clearInterval(certGenTimerRef.current);
+        certGenTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const onMessageRefetch = useCallback(
+    (message: DialogMessage) => {
+      if (flowPending) {
+        Alert.alert("Busy", "Please wait for the current request to finish.");
+        return;
+      }
+      if (!capsuleUrl.trim()) {
+        Alert.alert(
+          "No capsule URL",
+          "Add a Gemini URL to this capsule to fetch.",
+        );
+        return;
+      }
+      const fetchUrl = geminiDocumentBaseUrlForMessage(capsuleUrl, message);
+      const isRevisit = isCapsuleRootRequestPath(capsuleUrl, message);
+      void submitMessageFlow("", {
+        fetchUrl,
+        ...(isRevisit ? {} : { displayText: "Revisit" }),
+      });
+    },
+    [capsuleUrl, flowPending, submitMessageFlow],
+  );
+
+  const getMessageRefetchMenuAction = useCallback(
+    (message: DialogMessage) =>
+      isCapsuleRootRequestPath(capsuleUrl, message)
+        ? { title: "Revisit home" as const, systemIcon: "house" as const }
+        : { title: "Revisit" as const, systemIcon: "arrow.clockwise" as const },
+    [capsuleUrl],
+  );
 
   const onGemtextLink = useCallback(
     (action: GemtextLinkAction, linkLabel: string) => {
@@ -264,10 +366,7 @@ export function DialogViewScreen() {
       }
 
       const target = action.url.trim();
-      if (
-        capsuleUrl.length > 0 &&
-        geminiOriginsMatch(target, capsuleUrl)
-      ) {
+      if (capsuleUrl.length > 0 && geminiOriginsMatch(target, capsuleUrl)) {
         void submitMessageFlow(linkLabel, { fetchUrl: target });
         return;
       }
@@ -313,14 +412,7 @@ export function DialogViewScreen() {
         }
       })();
     },
-    [
-      capsuleUrl,
-      createCapsule,
-      getList,
-      invalidate,
-      router,
-      submitMessageFlow,
-    ],
+    [capsuleUrl, createCapsule, getList, invalidate, router, submitMessageFlow],
   );
 
   const title = useMemo(() => {
@@ -329,50 +421,120 @@ export function DialogViewScreen() {
     return "Dialog";
   }, [nameParam, dialogRow?.capsule?.name]);
 
+  const capsuleHeaderMeta = useMemo(() => {
+    const cap = dialogRow?.capsule;
+    const id = dialogId;
+    const displayName = title;
+    return {
+      id,
+      name: displayName,
+      avatarUrl: cap?.avatarUrl,
+    };
+  }, [dialogId, dialogRow?.capsule, title]);
+
+  const openCapsuleDetail = useCallback(() => {
+    if (!capsuleHeaderMeta.id) return;
+    router.push({
+      pathname: "/capsule/[id]",
+      params: { id: capsuleHeaderMeta.id },
+    } as unknown as Href);
+  }, [capsuleHeaderMeta.id, router]);
+
+  const emptyCapsuleForList = useMemo(():
+    | MessageListEmptyCapsule
+    | undefined => {
+    const cap = dialogRow?.capsule;
+    if (cap) {
+      const desc = cap.description?.trim();
+      return {
+        capsuleId: cap.id,
+        name: cap.name,
+        avatarUrl: cap.avatarUrl,
+        ...(desc ? { description: desc } : {}),
+      };
+    }
+    if (nameParam && nameParam.length > 0 && dialogId) {
+      return {
+        capsuleId: dialogId,
+        name: nameParam,
+      };
+    }
+    return undefined;
+  }, [dialogId, dialogRow?.capsule, nameParam]);
+
+  const headerTitleColor =
+    scheme === "dark" ? appColors.headerTitleDark : appColors.headerTitleLight;
+
   useLayoutEffect(() => {
     navigation.setOptions({
       ...navigationChromeForScheme(scheme),
-      title,
+      headerTitle: () => (
+        <Pressable
+          onPress={openCapsuleDetail}
+          disabled={!capsuleHeaderMeta.id}
+          style={({ pressed }) => [
+            styles.headerTitleRow,
+            !capsuleHeaderMeta.id ? { opacity: 0.5 } : null,
+            pressed && capsuleHeaderMeta.id ? { opacity: 0.65 } : null,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel={`${capsuleHeaderMeta.name} capsule details`}
+        >
+          <CapsuleAvatar
+            capsuleId={capsuleHeaderMeta.id || dialogId || "capsule"}
+            name={capsuleHeaderMeta.name}
+            uri={capsuleHeaderMeta.avatarUrl}
+            size={28}
+          />
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.headerTitleText,
+              {
+                color: headerTitleColor,
+              },
+            ]}
+          >
+            {capsuleHeaderMeta.name}
+          </Text>
+        </Pressable>
+      ),
     });
-  }, [navigation, scheme, title]);
+  }, [
+    capsuleHeaderMeta.avatarUrl,
+    capsuleHeaderMeta.id,
+    capsuleHeaderMeta.name,
+    dialogId,
+    headerTitleColor,
+    navigation,
+    openCapsuleDetail,
+    scheme,
+  ]);
 
-  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : undefined;
+  const lastMessage =
+    messages.length > 0 ? messages[messages.length - 1] : undefined;
 
   const composerPlaceholder = useMemo(() => {
     const raw = lastMessage?.body?.trim();
     if (!raw) return "Message";
-    return raw.length <= 40 ? raw : raw.slice(0, 40);
+    const max = 80;
+    if (raw.length <= max) return raw;
+    return `${raw.slice(0, max)}…`;
   }, [lastMessage?.body]);
 
   const requestHomeAsRefresh = useMemo(() => {
     if (lastMessage == null) return false;
-    const cap = capsuleUrl.trim();
-    if (!cap) return false;
-    try {
-      const atCapsuleEntry = geminiRequestPathForMessage(cap, cap);
-      const cur = lastMessage.requestPath.trim();
-      return (
-        cur === atCapsuleEntry ||
-        (atCapsuleEntry === "/" && cur === "")
-      );
-    } catch {
-      return false;
-    }
+    return isCapsuleRootRequestPath(capsuleUrl, lastMessage);
   }, [lastMessage, capsuleUrl]);
 
   const lastExpectsInput =
     lastMessage != null &&
     (lastMessage.status === 10 || lastMessage.status === 11);
-  const showStart =
-    !loadingInitial && messages.length === 0 && !!dialogId;
-  const showTextComposer =
-    !!dialogId && !loadingInitial && lastExpectsInput;
+  const showStart = !loadingInitial && messages.length === 0 && !!dialogId;
+  const showTextComposer = !!dialogId && !loadingInitial && lastExpectsInput;
   /** Capsule root fetch when the server is not waiting for INPUT (10 / SENSITIVE_INPUT 11). */
   const showHome =
-    !!dialogId &&
-    !loadingInitial &&
-    lastMessage != null &&
-    !lastExpectsInput;
+    !!dialogId && !loadingInitial && lastMessage != null && !lastExpectsInput;
 
   const bottomInset = Math.max(insets.bottom, 8);
 
@@ -382,6 +544,14 @@ export function DialogViewScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={headerHeight}
     >
+      <BlockingProgressModal
+        visible={certGenVisible}
+        blocking
+        title="Generating certificate…"
+        message="This may take up to 2.5 minutes. We’ll cancel if it takes longer."
+        progressDurationMs={CERT_GEN_TIMEOUT_MS}
+        progressKey={certGenProgressKey}
+      />
       <MessageList
         ref={listRef}
         resetScrollKey={dialogId}
@@ -394,6 +564,9 @@ export function DialogViewScreen() {
         geminiLinkBaseUrl={capsuleUrl}
         onGemtextLink={onGemtextLink}
         geminiLinksDisabled={flowPending}
+        emptyCapsule={emptyCapsuleForList}
+        onMessageRefetch={onMessageRefetch}
+        getMessageRefetchMenuAction={getMessageRefetchMenuAction}
       />
       {showStart ? (
         <View
@@ -459,7 +632,9 @@ export function DialogViewScreen() {
               void submitMessageFlow("", {
                 fromHome: true,
                 requestText: "",
-                displayText: requestHomeAsRefresh ? "Revisit home" : "Visit home",
+                displayText: requestHomeAsRefresh
+                  ? "Revisit home"
+                  : "Visit home",
               });
             }}
             style={({ pressed }) => [
@@ -471,9 +646,7 @@ export function DialogViewScreen() {
               },
             ]}
             accessibilityLabel={
-              requestHomeAsRefresh
-                ? "Revisit home"
-                : "Visit home"
+              requestHomeAsRefresh ? "Revisit home" : "Visit home"
             }
           >
             {flowPending ? (
@@ -481,13 +654,18 @@ export function DialogViewScreen() {
             ) : (
               <View style={styles.homeButtonContent}>
                 <Ionicons
-                  name={requestHomeAsRefresh ? "refresh-outline" : "home-outline"}
+                  name={
+                    requestHomeAsRefresh ? "refresh-outline" : "home-outline"
+                  }
                   size={18}
                   color={palette.composerText}
                   style={styles.homeButtonIcon}
                 />
                 <Text
-                  style={[styles.homeButtonLabel, { color: palette.composerText }]}
+                  style={[
+                    styles.homeButtonLabel,
+                    { color: palette.composerText },
+                  ]}
                 >
                   {requestHomeAsRefresh ? "Revisit home" : "Visit home"}
                 </Text>
@@ -525,6 +703,17 @@ export function DialogViewScreen() {
 }
 
 const styles = StyleSheet.create({
+  headerTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    maxWidth: 260,
+  },
+  headerTitleText: {
+    marginLeft: 8,
+    fontSize: 17,
+    fontWeight: "600",
+    flexShrink: 1,
+  },
   screen: {
     flex: 1,
   },

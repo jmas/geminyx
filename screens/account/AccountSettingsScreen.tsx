@@ -1,17 +1,23 @@
-import { useList } from "@refinedev/core";
-import { useEffect, useState } from "react";
+import { useList, useUpdate } from "@refinedev/core";
+import * as DocumentPicker from "expo-document-picker";
+import { readAsStringAsync } from "expo-file-system/legacy";
+import { useCallback, useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
-  DevSettings,
   Image,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useColorScheme,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Account } from "lib/models/account";
+import { notifyLocalDatabaseErased } from "lib/localDatabaseErase";
 import { RESOURCES } from "lib/refineDataProvider";
 import { resetLocalDatabase } from "lib/sqlite";
 import { appColors } from "lib/theme/appColors";
@@ -40,9 +46,10 @@ const colors = {
 
 export function AccountSettingsScreen() {
   const scheme = useColorScheme();
+  const insets = useSafeAreaInsets();
   const palette = scheme === "dark" ? colors.dark : colors.light;
-  const showDevReset =
-    __DEV__ && Platform.OS !== "web" && DevSettings.reload != null;
+  /** SQLite lives on native; web build has no file-backed DB to erase here. */
+  const showEraseLocalDatabase = Platform.OS !== "web";
 
   const { result, query } = useList<Account>({
     resource: RESOURCES.accounts,
@@ -59,10 +66,99 @@ export function AccountSettingsScreen() {
   const activeAccount = result.data?.[0];
   const profileLoading = query.isLoading || query.isFetching;
 
+  const { mutateAsync: updateAccount, mutation: certMutation } = useUpdate<Account>({
+    resource: RESOURCES.accounts,
+  });
+  const certBusy = certMutation.isPending;
+
+  const [passphraseDraft, setPassphraseDraft] = useState("");
+  useEffect(() => {
+    setPassphraseDraft(activeAccount?.geminiClientP12Passphrase ?? "");
+  }, [activeAccount?.geminiClientP12Passphrase]);
+
+  const handleImportPkcs12 = useCallback(async () => {
+    if (!activeAccount) return;
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (picked.canceled) return;
+      const uri = picked.assets?.[0]?.uri;
+      if (!uri) {
+        Alert.alert("Certificate", "Could not read the selected file.");
+        return;
+      }
+      const base64 = await readAsStringAsync(uri, { encoding: "base64" });
+      await updateAccount({
+        id: activeAccount.id,
+        values: { geminiClientP12Base64: base64 },
+      });
+      await query.refetch();
+      Alert.alert("Certificate", "PKCS#12 saved. It will be used for Gemini requests from this account.");
+    } catch (e) {
+      console.error("handleImportPkcs12", e);
+      Alert.alert(
+        "Certificate",
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+  }, [activeAccount, query, updateAccount]);
+
+  const handleSavePassphrase = useCallback(async () => {
+    if (!activeAccount) return;
+    try {
+      await updateAccount({
+        id: activeAccount.id,
+        values: { geminiClientP12Passphrase: passphraseDraft },
+      });
+      await query.refetch();
+      Alert.alert("Certificate", "Passphrase saved.");
+    } catch (e) {
+      Alert.alert(
+        "Certificate",
+        e instanceof Error ? e.message : String(e),
+      );
+    }
+  }, [activeAccount, passphraseDraft, query, updateAccount]);
+
+  const handleClearCert = useCallback(() => {
+    if (!activeAccount) return;
+    Alert.alert(
+      "Remove client certificate?",
+      "Gemini requests will no longer use a client certificate for this account.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Remove",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await updateAccount({
+                id: activeAccount.id,
+                values: {
+                  geminiClientP12Base64: null,
+                  geminiClientP12Passphrase: null,
+                },
+              });
+              setPassphraseDraft("");
+              await query.refetch();
+            } catch (e) {
+              Alert.alert(
+                "Certificate",
+                e instanceof Error ? e.message : String(e),
+              );
+            }
+          },
+        },
+      ],
+    );
+  }, [activeAccount, query, updateAccount]);
+
   function confirmEraseLocalData() {
     Alert.alert(
       "Erase local database?",
-      "All accounts, capsules, dialogs, and messages on this device will be removed. Demo seed data will be recreated on next launch.",
+      "All accounts, capsules, dialogs, and messages on this device will be removed. You will return to onboarding.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -71,7 +167,7 @@ export function AccountSettingsScreen() {
           onPress: async () => {
             try {
               await resetLocalDatabase();
-              DevSettings.reload();
+              notifyLocalDatabaseErased();
             } catch (e) {
               console.error("resetLocalDatabase failed", e);
               Alert.alert(
@@ -87,6 +183,16 @@ export function AccountSettingsScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: palette.background }]}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: Math.max(24, insets.bottom + 16) },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        showsVerticalScrollIndicator
+      >
       <Pressable
         disabled={profileLoading || !activeAccount}
         style={({ pressed }) => [
@@ -138,11 +244,103 @@ export function AccountSettingsScreen() {
         )}
       </Pressable>
 
-      {showDevReset ? (
-        <View style={[styles.section, styles.devSection]}>
+      <View style={styles.section}>
+        <Text style={[styles.sectionTitle, { color: palette.textPrimary }]}>
+          Gemini client certificate
+        </Text>
+        <Text style={[styles.hint, { color: palette.textSecondary }]}>
+          Optional PKCS#12 (.p12) for servers that require TLS client authentication. On other
+          platforms, the file is stored for this account; native Gemini fetch with a certificate
+          is implemented on iOS.
+        </Text>
+        {activeAccount?.geminiClientP12Base64 ? (
+          <Text style={[styles.certStatus, { color: palette.textSecondary }]}>
+            A certificate is configured for this account.
+          </Text>
+        ) : (
+          <Text style={[styles.certStatus, { color: palette.textTertiary }]}>
+            No certificate configured.
+          </Text>
+        )}
+        <Pressable
+          onPress={handleImportPkcs12}
+          disabled={profileLoading || !activeAccount || certBusy}
+          style={({ pressed }) => [
+            styles.secondaryButton,
+            {
+              borderColor: palette.textSecondary,
+              opacity: profileLoading || !activeAccount || certBusy ? 0.45 : 1,
+            },
+            pressed && { backgroundColor: palette.profilePressed },
+          ]}
+        >
+          {certBusy ? (
+            <ActivityIndicator />
+          ) : (
+            <Text style={[styles.secondaryLabel, { color: palette.textPrimary }]}>
+              Import PKCS#12 file…
+            </Text>
+          )}
+        </Pressable>
+        <Text style={[styles.fieldLabel, { color: palette.textSecondary }]}>
+          Passphrase (if the archive is encrypted)
+        </Text>
+        <TextInput
+          value={passphraseDraft}
+          onChangeText={setPassphraseDraft}
+          placeholder="Optional"
+          placeholderTextColor={palette.textTertiary}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          editable={!!activeAccount && !certBusy}
+          style={[
+            styles.passphraseInput,
+            {
+              borderColor: palette.textTertiary,
+              color: palette.textPrimary,
+            },
+          ]}
+        />
+        <Pressable
+          onPress={handleSavePassphrase}
+          disabled={profileLoading || !activeAccount || certBusy}
+          style={({ pressed }) => [
+            styles.secondaryButton,
+            {
+              borderColor: palette.textSecondary,
+              marginTop: 8,
+              opacity: profileLoading || !activeAccount || certBusy ? 0.45 : 1,
+            },
+            pressed && { backgroundColor: palette.profilePressed },
+          ]}
+        >
+          <Text style={[styles.secondaryLabel, { color: palette.textPrimary }]}>
+            Save passphrase
+          </Text>
+        </Pressable>
+        {activeAccount?.geminiClientP12Base64 ? (
+          <Pressable
+            onPress={handleClearCert}
+            disabled={certBusy}
+            style={({ pressed }) => [
+              styles.dangerButton,
+              { borderColor: palette.danger, marginTop: 12 },
+              pressed && { backgroundColor: palette.dangerPressed },
+            ]}
+          >
+            <Text style={[styles.dangerLabel, { color: palette.danger }]}>
+              Remove certificate
+            </Text>
+          </Pressable>
+        ) : null}
+      </View>
+
+      {showEraseLocalDatabase ? (
+        <View style={[styles.section, styles.eraseSection]}>
           <Text style={[styles.hint, { color: palette.textSecondary }]}>
-            Development: wipe SQLite and reload (same effect as deleting the app’s
-            data for this build).
+            Remove all local data stored in this app’s database (same as deleting
+            the app’s data for this build). You will return to onboarding.
           </Text>
           <Pressable
             onPress={confirmEraseLocalData}
@@ -158,6 +356,7 @@ export function AccountSettingsScreen() {
           </Pressable>
         </View>
       ) : null}
+      </ScrollView>
     </View>
   );
 }
@@ -199,6 +398,11 @@ function ProfileAvatar({ account }: { account: Account }) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 8,
   },
@@ -251,8 +455,42 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: 12,
+    marginTop: 24,
   },
-  devSection: {
+  sectionTitle: {
+    fontSize: 17,
+    fontWeight: "600",
+  },
+  certStatus: {
+    fontSize: 14,
+  },
+  secondaryButton: {
+    alignSelf: "flex-start",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    minWidth: 200,
+    alignItems: "center",
+  },
+  secondaryLabel: {
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: "600",
+    marginTop: 8,
+  },
+  passphraseInput: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === "ios" ? 12 : 10,
+    fontSize: 16,
+    marginTop: 6,
+  },
+  eraseSection: {
     marginTop: 28,
   },
   hint: {

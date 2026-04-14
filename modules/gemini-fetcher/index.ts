@@ -4,8 +4,32 @@ import { NativeModules } from "react-native";
  * Native Gemini (TCP/TLS) client. `fetch` resolves with the **full raw response**
  * (status line + CRLF + body).
  */
+export type GeminiFetchTlsIdentity = {
+  /**
+   * Optional Keychain/Keystore identifier for a previously stored client identity.
+   * When present (and supported by the native module), native code should use this
+   * identity directly instead of importing PKCS#12 for each request.
+   */
+  identityLabel?: string;
+  /** Base64-encoded PKCS#12 archive (DER). */
+  pkcs12Base64: string;
+  /** Passphrase for the archive; use empty string if none. */
+  passphrase?: string;
+};
+
 export interface NativeGeminiFetcherModule {
   fetch(urlString: string): Promise<string>;
+  fetchWithOptions?(
+    urlString: string,
+    options: { pkcs12Base64: string; passphrase?: string },
+  ): Promise<string>;
+  fetchWithIdentityLabel?(
+    urlString: string,
+    options: { identityLabel: string },
+  ): Promise<string>;
+  storeIdentityFromPkcs12?(
+    options: { identityLabel: string; pkcs12Base64: string; passphrase?: string },
+  ): Promise<void>;
 }
 
 export const GeminiFetcherNative = (
@@ -28,6 +52,8 @@ export type GeminiFetchInit = {
   maxRedirects?: number;
   input?: "manual" | "error";
   includeRaw?: boolean;
+  /** TLS client identity for servers that require a client certificate. */
+  tls?: GeminiFetchTlsIdentity;
 };
 
 export type GeminiFetchHistoryItem = { url: string; status: number; meta: string };
@@ -127,20 +153,41 @@ function statusTextForGeminiStatus(status: number): string {
   return "UNKNOWN";
 }
 
-export async function geminiFetchRaw(urlString: string): Promise<string> {
+export async function geminiFetchRaw(
+  urlString: string,
+  tls?: GeminiFetchTlsIdentity,
+): Promise<string> {
   const mod = GeminiFetcherNative;
   if (!mod?.fetch) {
     throw new Error(
       "GeminiFetcher native module is not available (native build required).",
     );
   }
+  const p12 = tls?.pkcs12Base64?.trim();
+  if (p12) {
+    if (!mod.fetchWithOptions) {
+      throw new Error(
+        "This build does not support Gemini client certificates. Rebuild the iOS app with the latest GeminiFetcher native module.",
+      );
+    }
+    return await mod.fetchWithOptions(urlString, {
+      pkcs12Base64: p12,
+      passphrase: tls?.passphrase ?? "",
+    });
+  }
+
+  const identityLabel = tls?.identityLabel?.trim();
+  if (identityLabel && mod.fetchWithIdentityLabel) {
+    return await mod.fetchWithIdentityLabel(urlString, { identityLabel });
+  }
   return await mod.fetch(urlString);
 }
 
 export async function fetchGeminiParsed(
   urlString: string,
+  tls?: GeminiFetchTlsIdentity,
 ): Promise<GeminiParsedResponse> {
-  const raw = await geminiFetchRaw(urlString);
+  const raw = await geminiFetchRaw(urlString, tls);
   return parseGeminiResponse(raw);
 }
 
@@ -152,6 +199,7 @@ export async function geminiFetch(
   const input = init?.input ?? "manual";
   const maxRedirects = init?.maxRedirects ?? 8;
   const includeRaw = init?.includeRaw ?? false;
+  const tls = init?.tls;
 
   const requestUrl = url.trim();
   if (!requestUrl.length) {
@@ -163,7 +211,7 @@ export async function geminiFetch(
   let redirected = false;
 
   for (let i = 0; i <= maxRedirects; i++) {
-    const parsed = await fetchGeminiParsed(currentUrl);
+    const parsed = await fetchGeminiParsed(currentUrl, tls);
     const status = parsed.statusCode;
     const meta = parsed.meta;
 

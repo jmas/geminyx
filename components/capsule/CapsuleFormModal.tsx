@@ -2,7 +2,6 @@ import { useCreate, useInvalidate } from "@refinedev/core";
 import type { FormikHelpers } from "formik";
 import {
   Alert,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   StyleSheet,
@@ -91,10 +90,7 @@ export function CapsuleFormModal({
       presentationStyle={Platform.OS === "ios" ? "pageSheet" : "fullScreen"}
       onRequestClose={dismissCancelled}
     >
-      <KeyboardAvoidingView
-        style={[styles.root, { backgroundColor: palette.background }]}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
+      <View style={[styles.root, { backgroundColor: palette.background }]}>
         <View style={styles.grabberWrap}>
           <View
             style={[styles.grabber, { backgroundColor: palette.sheetHandle }]}
@@ -107,10 +103,12 @@ export function CapsuleFormModal({
           palette={palette}
           scheme={scheme}
           isPending={createMutation.isPending}
+          initialValues={capsuleFormEmptyValues}
+          submitLabel="Add"
           onCancel={dismissCancelled}
           onSubmit={handleSubmit}
         />
-      </KeyboardAvoidingView>
+      </View>
     </Modal>
   );
 }

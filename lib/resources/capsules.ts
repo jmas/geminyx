@@ -5,15 +5,12 @@ import type {
   DeleteOneResponse,
   GetListParams,
   GetOneParams,
+  UpdateParams,
+  UpdateResponse,
 } from "@refinedev/core";
-import type { Capsule } from "lib/models/capsule";
+import { normalizeGeminiCapsuleRootUrl } from "lib/models/gemini";
+import { capsulesRepo, type CapsulePatch } from "repositories";
 import type { SqliteResourceAdapter } from "lib/sqlite/resourceAdapterTypes";
-import {
-  deleteCapsuleCascade,
-  fetchCapsule,
-  fetchCapsules,
-  insertCapsuleWithDialog,
-} from "lib/sqlite/queries";
 
 export const RESOURCE = "capsules" as const;
 
@@ -26,16 +23,18 @@ export type CapsuleCreateVariables = {
   description?: string;
 };
 
+export type CapsuleUpdateVariables = CapsulePatch;
+
 export const sqliteAdapter: SqliteResourceAdapter = {
   async getList<TData extends BaseRecord>(_params: GetListParams) {
-    const rows = await fetchCapsules();
+    const rows = await capsulesRepo.list();
     return {
       data: rows as unknown as TData[],
       total: rows.length,
     };
   },
   async getOne<TData extends BaseRecord>({ id }: GetOneParams) {
-    const row = await fetchCapsule(String(id));
+    const row = await capsulesRepo.getById(String(id));
     if (!row) {
       throw { message: "Capsule not found", statusCode: 404 };
     }
@@ -45,51 +44,37 @@ export const sqliteAdapter: SqliteResourceAdapter = {
     variables,
   }: CreateParams<TVariables>) {
     const v = variables as CapsuleCreateVariables;
-    const capsule = await insertCapsuleWithDialog({
+    const rawUrl = v.url?.trim();
+    const capsule = await capsulesRepo.insertWithDialog({
       name: v.name,
       avatarUrl: v.avatarUrl,
-      url: v.url,
+      url: rawUrl ? normalizeGeminiCapsuleRootUrl(rawUrl) : undefined,
       description: v.description,
     });
     return { data: capsule as unknown as TData };
   },
-  async deleteOne<
-    TData extends BaseRecord,
-    TVariables = unknown,
-  >({ id }: DeleteOneParams<TVariables>): Promise<DeleteOneResponse<TData>> {
-    await deleteCapsuleCascade(String(id));
+  async update<TData extends BaseRecord, TVariables = unknown>({
+    id,
+    variables,
+  }: UpdateParams<TVariables>): Promise<UpdateResponse<TData>> {
+    const v = variables as CapsuleUpdateVariables;
+    const rawUrl = v.url?.trim();
+    await capsulesRepo.patch(String(id), {
+      ...v,
+      url: rawUrl ? normalizeGeminiCapsuleRootUrl(rawUrl) : "",
+    });
+    const row = await capsulesRepo.getById(String(id));
+    if (!row) {
+      throw { message: "Capsule not found", statusCode: 404 };
+    }
+    return { data: row as unknown as TData };
+  },
+  async deleteOne<TData extends BaseRecord, TVariables = unknown>({
+    id,
+  }: DeleteOneParams<TVariables>): Promise<DeleteOneResponse<TData>> {
+    await capsulesRepo.deleteCascade(String(id));
     return { data: { id } as unknown as TData };
   },
 };
 
-/** Demo rows used to seed SQLite on first launch */
-export const SEED_CAPSULES: Capsule[] = [
-  {
-    id: "1",
-    name: "Alex Rivera",
-    avatarUrl: "https://i.pravatar.cc/200?img=12",
-    url: "gemini://kennedy.gemi.dev",
-    description: "Design syncs and weekend plans",
-  },
-  {
-    id: "2",
-    name: "Jordan Lee",
-    avatarUrl: "https://i.pravatar.cc/200?img=33",
-    url: "gemini://jordan.example.gemi.dev",
-    description: "Docs, reviews, and async updates",
-  },
-  {
-    id: "3",
-    name: "Sam Chen",
-  },
-  {
-    id: "4",
-    name: "Taylor Morgan",
-    avatarUrl: "https://i.pravatar.cc/200?img=47",
-    description: "Birthday thread and life updates",
-  },
-  {
-    id: "5",
-    name: "Casey Brooks",
-  },
-];
+export { SEED_CAPSULES } from "./seedCapsules";

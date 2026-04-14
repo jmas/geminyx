@@ -9,10 +9,11 @@ import {
 } from "react-native";
 import { resolveGeminiLinkHref } from "lib/models/gemini";
 import { parseGemtext, type GemtextSegment } from "utils/parseGemtext";
+import { parseAnsiSgrToRuns } from "utils/parseAnsiSgr";
 
 const mono = Platform.select({
-  ios: "Menlo",
-  android: "monospace",
+  ios: "JetBrainsMono_400Regular",
+  android: "JetBrainsMono_400Regular",
   default: "monospace",
 });
 
@@ -30,9 +31,6 @@ const BODY_LH = Math.round(BODY_SIZE * 1.42);
 const MESSAGE_LIST_CONTENT_PADDING_H = 10;
 const BUBBLE_PADDING_H = 11;
 const ROW_MAX_WIDTH_FRAC = 0.8;
-
-/** Approximate monospace glyph width factor (Menlo / monospace); avoids RN wrapping long lines. */
-const PRE_MONO_CHAR_WIDTH_FACTOR = 0.62;
 
 /** Outside the tinted pre chip; pairs with a smaller `marginTop` on the following segment. */
 const PRE_MARGIN_BOTTOM = 14;
@@ -63,6 +61,8 @@ export type GemtextLinkAction =
 
 export type IncomingGemtextChrome = "light" | "dark";
 
+export type CodeBlockTheme = "bubble" | "terminal";
+
 export type GemtextMessageBodyProps = {
   body: string;
   textColor: string;
@@ -76,6 +76,8 @@ export type GemtextMessageBodyProps = {
    * (affects quote bar and pre background).
    */
   incomingChrome?: IncomingGemtextChrome;
+  /** Visual style for ``` pre ``` blocks. */
+  codeBlockTheme?: CodeBlockTheme;
   linksDisabled?: boolean;
   onGemtextLink?: (action: GemtextLinkAction, linkLabel: string) => void;
 };
@@ -181,6 +183,7 @@ export function GemtextMessageBody({
   baseUrl,
   isOutgoing = false,
   incomingChrome = "light",
+  codeBlockTheme = "bubble",
   linksDisabled,
   onGemtextLink,
 }: GemtextMessageBodyProps) {
@@ -200,13 +203,6 @@ export function GemtextMessageBody({
         ? { minWidth: messageBodyMinWidth(windowWidth) }
         : null,
     [needsWidthFloor, windowWidth],
-  );
-
-  const contentMinWidth = messageBodyMinWidth(windowWidth);
-  /** Avoid pathological `Text` width from megabyte-long pre lines (layout / memory). */
-  const preTextWidthCap = Math.max(
-    contentMinWidth,
-    Math.floor(windowWidth * 4),
   );
 
   const rowLayout = useMemo(() => {
@@ -252,10 +248,9 @@ export function GemtextMessageBody({
               baseUrl={baseUrl}
               isOutgoing={isOutgoing}
               incomingChrome={incomingChrome}
+              codeBlockTheme={codeBlockTheme}
               linksDisabled={linksDisabled}
               onGemtextLink={onGemtextLink}
-              contentMinWidth={contentMinWidth}
-              preTextWidthCap={preTextWidthCap}
             />
           )}
         </View>
@@ -362,10 +357,9 @@ function BlockSegment({
   baseUrl,
   isOutgoing,
   incomingChrome,
+  codeBlockTheme,
   linksDisabled,
   onGemtextLink,
-  contentMinWidth,
-  preTextWidthCap,
 }: {
   segment: Exclude<GemtextSegment, GemtextInlineSegment>;
   textColor: string;
@@ -373,8 +367,7 @@ function BlockSegment({
   baseUrl: string;
   isOutgoing: boolean;
   incomingChrome: IncomingGemtextChrome;
-  contentMinWidth: number;
-  preTextWidthCap: number;
+  codeBlockTheme: CodeBlockTheme;
   linksDisabled?: boolean;
   onGemtextLink?: (action: GemtextLinkAction, linkLabel: string) => void;
 }) {
@@ -435,28 +428,23 @@ function BlockSegment({
         </Text>
       );
     case "pre": {
-      const monoSize = Platform.OS === "ios" ? 14 : 13;
-      const longestLine = segment.text.split("\n").reduce(
-        (max, line) => Math.max(max, line.length),
-        0,
-      );
-      const preTextWidth = Math.min(
-        preTextWidthCap,
-        Math.max(
-          contentMinWidth,
-          Math.ceil(longestLine * monoSize * PRE_MONO_CHAR_WIDTH_FACTOR),
-        ),
-      );
+      const lines = segment.text.split("\n");
+      const terminal = codeBlockTheme === "terminal";
+      const preTextColor = terminal
+        ? "rgba(255, 255, 255, 0.92)"
+        : textColor;
       return (
         <View
           style={[
             styles.preWrap,
             styles.segmentWidth,
-            isOutgoing
-              ? styles.preWrapOutgoing
-              : incomingChrome === "dark"
-                ? styles.preWrapIncomingDark
-                : styles.preWrapIncoming,
+            terminal
+              ? styles.preWrapTerminal
+              : isOutgoing
+                ? styles.preWrapOutgoing
+                : incomingChrome === "dark"
+                  ? styles.preWrapIncomingDark
+                  : styles.preWrapIncoming,
           ]}
         >
           <ScrollView
@@ -467,16 +455,24 @@ function BlockSegment({
             style={styles.preHorizontalScroll}
             contentContainerStyle={styles.preHorizontalScrollContent}
           >
-            <View style={styles.preTextMeasure}>
-              <Text
-                style={[
-                  styles.preText,
-                  { color: textColor, width: preTextWidth },
-                ]}
-                selectable
-              >
-                {segment.text}
-              </Text>
+            <View style={styles.preTextColumn}>
+              {lines.map((line, li) => (
+                <Text
+                  key={li}
+                  selectable
+                  numberOfLines={1}
+                  {...(Platform.OS === "android"
+                    ? { textBreakStrategy: "simple" as const }
+                    : {})}
+                  style={[styles.preText, { color: preTextColor }]}
+                >
+                  {parseAnsiSgrToRuns(line, preTextColor).map((run, ri) => (
+                    <Text key={ri} style={run.style}>
+                      {run.text}
+                    </Text>
+                  ))}
+                </Text>
+              ))}
             </View>
           </ScrollView>
         </View>
@@ -566,6 +562,11 @@ const styles = StyleSheet.create({
   preWrapOutgoing: {
     backgroundColor: "rgba(255, 255, 255, 0.18)",
   },
+  preWrapTerminal: {
+    backgroundColor: "#0b0f14",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+  },
   /**
    * Nested in the dialog `ScrollView`, horizontal `ScrollView` defaults to `flexGrow: 1`
    * and expands to the viewport height — empty space inside the bubble and timestamp
@@ -579,13 +580,15 @@ const styles = StyleSheet.create({
   preHorizontalScrollContent: {
     flexGrow: 0,
   },
-  /** Keep vertical padding symmetric; extra bottom was making the last code line sit high in the chip. */
-  preTextMeasure: {
+  /** Intrinsic width = widest line; avoids underestimating width (RN wraps when `width` is too small). */
+  preTextColumn: {
     alignSelf: "flex-start",
+    flexShrink: 0,
   },
   preText: {
     fontFamily: mono,
     fontSize: Platform.OS === "ios" ? 14 : 13,
     lineHeight: Platform.OS === "ios" ? 21 : 20,
+    ...(Platform.OS === "android" ? { includeFontPadding: false as const } : {}),
   },
 });

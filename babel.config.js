@@ -18,6 +18,8 @@ module.exports = function (api) {
           extensions: [".tsx", ".ts", ".jsx", ".js", ".json"],
         },
       ],
+      // Must be listed last.
+      "react-native-worklets/plugin",
     ],
   };
 };

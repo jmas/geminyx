@@ -3,8 +3,7 @@ import {
   openDatabaseAsync,
   type SQLiteDatabase,
 } from "expo-sqlite";
-import { SEED_CAPSULES } from "lib/resources/capsules";
-import { demoDialogMessagesByCapsule } from "lib/resources/messages";
+import { SEED_CAPSULES } from "lib/resources/seedCapsules";
 import { runMigrations } from "lib/sqlite/migrations";
 
 /** File name in Expo’s default SQLite directory (app sandbox). */
@@ -38,6 +37,7 @@ async function seedIfEmpty(db: SQLiteDatabase): Promise<void> {
   if ((countRow?.n ?? 0) > 0) return;
 
   await db.withTransactionAsync(async () => {
+    const emptyDialogAt = new Date(0).toISOString();
     for (const c of SEED_CAPSULES) {
       await db.runAsync(
         `INSERT INTO capsules (id, name, avatar_url, url, description)
@@ -48,62 +48,15 @@ async function seedIfEmpty(db: SQLiteDatabase): Promise<void> {
         c.url ?? null,
         c.description?.trim() ? c.description.trim() : null,
       );
-    }
-    for (const [capsuleId, messages] of Object.entries(
-      demoDialogMessagesByCapsule,
-    )) {
-      const sorted = [...messages].sort((a, b) =>
-        a.sentAt.localeCompare(b.sentAt),
-      );
-      const last = sorted[sorted.length - 1];
       await db.runAsync(
         `INSERT INTO dialogs (id, capsule_id, message_id, last_message_at)
-         VALUES (?, ?, ?, ?)`,
-        capsuleId,
-        capsuleId,
-        null,
-        last.sentAt,
-      );
-      for (const m of messages) {
-        await db.runAsync(
-          `INSERT INTO messages (id, dialog_id, content_length, body, blob_id, status, meta, sent_at, is_outgoing, request_path)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          m.id,
-          capsuleId,
-          m.contentLength,
-          m.body?.trim() ? m.body.trim() : null,
-          m.blobId ?? null,
-          m.status ?? null,
-          m.meta?.trim() ? m.meta.trim() : null,
-          m.sentAt,
-          m.isOutgoing ? 1 : 0,
-          m.requestPath?.trim() ?? "",
-        );
-      }
-      await db.runAsync(
-        `UPDATE dialogs SET message_id = ? WHERE id = ?`,
-        last.id,
-        capsuleId,
+         VALUES (?, ?, NULL, ?)`,
+        c.id,
+        c.id,
+        emptyDialogAt,
       );
     }
   });
-}
-
-async function ensureDefaultAccount(db: SQLiteDatabase): Promise<void> {
-  const countRow = await db.getFirstAsync<{ n: number }>(
-    "SELECT COUNT(*) AS n FROM accounts",
-  );
-  if ((countRow?.n ?? 0) > 0) return;
-
-  await db.runAsync(
-    `INSERT INTO accounts (id, name, email, avatar_url, capsule_url, is_active)
-     VALUES (?, ?, ?, ?, ?, 1)`,
-    "local",
-    "You",
-    null,
-    null,
-    null,
-  );
 }
 
 async function openAndPrepare(): Promise<SQLiteDatabase> {
@@ -111,7 +64,6 @@ async function openAndPrepare(): Promise<SQLiteDatabase> {
   await db.execAsync("PRAGMA foreign_keys = ON;");
   await runMigrations(db);
   await seedIfEmpty(db);
-  await ensureDefaultAccount(db);
   return db;
 }
 

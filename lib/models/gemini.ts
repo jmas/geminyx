@@ -101,6 +101,60 @@ export function geminiRequestPathForMessage(
   }
 }
 
+/**
+ * True when the message was fetched from the capsule root URL (same path as
+ * opening the bare `gemini://host` URL). Used for “Revisit home” vs “Revisit”.
+ *
+ * Compares resolved URLs so `requestPath` "" vs "/" vs the stored home path
+ * all match the same document as `geminiRequestPathForMessage(cap, cap)`.
+ */
+export function isCapsuleRootRequestPath(
+  capsuleUrl: string,
+  message: { requestPath: string },
+): boolean {
+  const cap = capsuleUrl.trim();
+  if (!cap) return false;
+  try {
+    const homePath = geminiRequestPathForMessage(cap, cap);
+    const rootUrl = resolveGeminiRequestPathForCompare(cap, homePath);
+    const msgUrl = resolveGeminiRequestPathForCompare(
+      cap,
+      message.requestPath ?? "",
+    );
+    return geminiUrlsCanonicallyEqual(rootUrl, msgUrl);
+  } catch {
+    return false;
+  }
+}
+
+function geminiUrlsCanonicallyEqual(a: string, b: string): boolean {
+  if (a === b) return true;
+  try {
+    return new URL(a).href === new URL(b).href;
+  } catch {
+    return false;
+  }
+}
+
+function resolveGeminiRequestPathForCompare(
+  capsuleUrl: string,
+  requestPath: string,
+): string {
+  const cap = capsuleUrl.trim();
+  const raw = requestPath.trim();
+  const homePath = geminiRequestPathForMessage(cap, cap);
+  if (raw === "" || raw === "/" || raw === homePath) {
+    return geminiDocumentBaseUrlForMessage(cap, {
+      isOutgoing: false,
+      requestPath: homePath,
+    });
+  }
+  return geminiDocumentBaseUrlForMessage(cap, {
+    isOutgoing: false,
+    requestPath: raw,
+  });
+}
+
 /** Base URL for resolving relative Gemtext links for a given message. */
 export function geminiDocumentBaseUrlForMessage(
   capsuleUrl: string,
@@ -171,6 +225,29 @@ export function resolveGeminiRedirectTarget(
     return base.length > 0 ? new URL(m, base).href : m;
   } catch {
     return m;
+  }
+}
+
+/**
+ * Capsule-stored URL: `gemini://` origin only (no path, query, or hash).
+ * Default port 1965 is omitted; non-default ports are kept.
+ */
+export function normalizeGeminiCapsuleRootUrl(url: string): string {
+  const raw = url.trim();
+  if (!raw.length) return raw;
+  if (!/^gemini:\/\//i.test(raw)) return raw;
+  try {
+    const u = new URL(raw);
+    if (!/^gemini:$/i.test(u.protocol)) return raw;
+    const host = u.hostname;
+    const port = u.port;
+    const defaultPort = "1965";
+    if (port && port !== defaultPort) {
+      return `gemini://${host}:${port}`;
+    }
+    return `gemini://${host}`;
+  } catch {
+    return raw;
   }
 }
 

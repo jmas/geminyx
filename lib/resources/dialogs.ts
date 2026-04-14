@@ -5,12 +5,8 @@ import type {
   GetListParams,
   GetOneParams,
 } from "@refinedev/core";
+import { capsulesRepo, dialogsRepo } from "repositories";
 import type { SqliteResourceAdapter } from "lib/sqlite/resourceAdapterTypes";
-import {
-  deleteCapsuleCascade,
-  fetchDialog,
-  fetchDialogs,
-} from "lib/sqlite/queries";
 
 export const RESOURCE = "dialogs" as const;
 
@@ -18,14 +14,14 @@ export type { Dialog } from "lib/models/dialog";
 
 export const sqliteAdapter: SqliteResourceAdapter = {
   async getList<TData extends BaseRecord>(_params: GetListParams) {
-    const rows = await fetchDialogs();
+    const rows = await dialogsRepo.list();
     return {
       data: rows as unknown as TData[],
       total: rows.length,
     };
   },
   async getOne<TData extends BaseRecord>({ id }: GetOneParams) {
-    const row = await fetchDialog(String(id));
+    const row = await dialogsRepo.getById(String(id));
     if (!row) {
       throw { message: "Dialog not found", statusCode: 404 };
     }
@@ -35,7 +31,7 @@ export const sqliteAdapter: SqliteResourceAdapter = {
     TData extends BaseRecord,
     TVariables = unknown,
   >({ id }: DeleteOneParams<TVariables>): Promise<DeleteOneResponse<TData>> {
-    await deleteCapsuleCascade(String(id));
+    await capsulesRepo.deleteCascade(String(id));
     return { data: { id } as unknown as TData };
   },
 };

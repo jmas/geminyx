@@ -7,12 +7,8 @@ import type {
   UpdateResponse,
 } from "@refinedev/core";
 import type { Account } from "lib/models/account";
+import { accountsRepo, type AccountPatch } from "repositories";
 import type { SqliteResourceAdapter } from "lib/sqlite/resourceAdapterTypes";
-import {
-  fetchAccount,
-  fetchAccounts,
-  patchAccount,
-} from "lib/sqlite/queries";
 
 export const RESOURCE = "accounts" as const;
 
@@ -46,14 +42,12 @@ function activeOnlyFromFilters(
   return undefined;
 }
 
-type AccountUpdateVariables = Partial<
-  Pick<Account, "name" | "email" | "avatarUrl" | "capsuleUrl" | "isActive">
->;
+type AccountUpdateVariables = AccountPatch;
 
 export const sqliteAdapter: SqliteResourceAdapter = {
   async getList<TData extends BaseRecord>({ filters }: GetListParams) {
     const activeOnly = activeOnlyFromFilters(filters);
-    const rows = await fetchAccounts(
+    const rows = await accountsRepo.list(
       activeOnly === undefined ? {} : { activeOnly },
     );
     return {
@@ -62,7 +56,7 @@ export const sqliteAdapter: SqliteResourceAdapter = {
     };
   },
   async getOne<TData extends BaseRecord>({ id }: GetOneParams) {
-    const row = await fetchAccount(String(id));
+    const row = await accountsRepo.getById(String(id));
     if (!row) {
       throw { message: "Account not found", statusCode: 404 };
     }
@@ -72,8 +66,8 @@ export const sqliteAdapter: SqliteResourceAdapter = {
     id,
     variables,
   }: UpdateParams<TVariables>): Promise<UpdateResponse<TData>> {
-    await patchAccount(String(id), variables as AccountUpdateVariables);
-    const row = await fetchAccount(String(id));
+    await accountsRepo.patch(String(id), variables as AccountUpdateVariables);
+    const row = await accountsRepo.getById(String(id));
     if (!row) {
       throw { message: "Account not found", statusCode: 404 };
     }
