@@ -1,4 +1,5 @@
 import { DatabaseProvider } from "@nozbe/watermelondb/react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -6,6 +7,7 @@ import { JetBrainsMono_400Regular, useFonts } from "@expo-google-fonts/jetbrains
 import { isAppDatabaseReady } from "lib/appDatabaseReady";
 import { initializeDatabase } from "lib/databaseSetup";
 import { registerLocalDatabaseEraseHandler } from "lib/localDatabaseErase";
+import { queryClient } from "lib/queryClient";
 import { getWatermelonDatabase } from "lib/watermelon/database";
 import { useCallback, useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
@@ -80,72 +82,76 @@ export default function RootLayout() {
   if (gate === "onboarding") {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
-        {onboardingStep === "slides" ? (
-          <OnboardingScreen
-            onFinishIntro={() => setOnboardingStep("create")}
-          />
-        ) : (
-          <AccountCreateScreen
-            embedMode
-            onBackToIntro={() => setOnboardingStep("slides")}
-            onSuccess={enterApp}
-          />
-        )}
-        <StatusBar style="auto" />
+        <QueryClientProvider client={queryClient}>
+          {onboardingStep === "slides" ? (
+            <OnboardingScreen
+              onFinishIntro={() => setOnboardingStep("create")}
+            />
+          ) : (
+            <AccountCreateScreen
+              embedMode
+              onBackToIntro={() => setOnboardingStep("slides")}
+              onSuccess={enterApp}
+            />
+          )}
+          <StatusBar style="auto" />
+        </QueryClientProvider>
       </GestureHandlerRootView>
     );
   }
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <DatabaseProvider database={getWatermelonDatabase()}>
-        <PopupProvider>
-          <Stack>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen
-              name="thread/[id]"
-              options={{
-                headerBackTitle: "Back",
-              }}
-            />
-            <Stack.Screen
-              name="capsule/[id]"
-              options={{
-                headerBackTitle: "Back",
-              }}
-            />
-            <Stack.Screen
-              name="account/edit"
-              options={{
-                title: "Edit profile",
-                headerBackTitle: "Back",
-              }}
-            />
-            <Stack.Screen
-              name="account/create"
-              options={{
-                title: "New account",
-                headerBackTitle: "Back",
-              }}
-            />
-            <Stack.Screen
-              name="account/certificate"
-              options={{
-                title: "Certificate",
-                headerBackTitle: "Back",
-              }}
-            />
-            <Stack.Screen
-              name="account/developer"
-              options={{
-                title: "Developer",
-                headerBackTitle: "Back",
-              }}
-            />
-          </Stack>
-          <StatusBar style="auto" />
-        </PopupProvider>
-      </DatabaseProvider>
+      <QueryClientProvider client={queryClient}>
+        <DatabaseProvider database={getWatermelonDatabase()}>
+          <PopupProvider>
+            <Stack>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen
+                name="thread/[id]"
+                options={{
+                  headerBackTitle: "Back",
+                }}
+              />
+              <Stack.Screen
+                name="capsule/[id]"
+                options={{
+                  headerBackTitle: "Back",
+                }}
+              />
+              <Stack.Screen
+                name="account/edit"
+                options={{
+                  title: "Edit profile",
+                  headerBackTitle: "Back",
+                }}
+              />
+              <Stack.Screen
+                name="account/create"
+                options={{
+                  title: "New account",
+                  headerBackTitle: "Back",
+                }}
+              />
+              <Stack.Screen
+                name="account/certificate"
+                options={{
+                  title: "Certificate",
+                  headerBackTitle: "Back",
+                }}
+              />
+              <Stack.Screen
+                name="account/developer"
+                options={{
+                  title: "Developer",
+                  headerBackTitle: "Back",
+                }}
+              />
+            </Stack>
+            <StatusBar style="auto" />
+          </PopupProvider>
+        </DatabaseProvider>
+      </QueryClientProvider>
     </GestureHandlerRootView>
   );
 }

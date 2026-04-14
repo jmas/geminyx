@@ -1,4 +1,5 @@
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { useCallback, useLayoutEffect, useMemo, useState } from "react";
@@ -12,21 +13,21 @@ import {
   View,
 } from "react-native";
 import type { FormikHelpers } from "formik";
-import { useNavigation } from "@react-navigation/native";
 import {
   CapsuleForm,
   type CapsuleFormModalPalette,
   type CapsuleFormValues,
 } from "components/capsule/CapsuleForm";
 import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
-import type { Capsule } from "lib/models/capsule";
+import { useAccountActive } from "hooks/account/useAccountActive";
+import { queryKeys } from "lib/queryKeys";
 import {
   appColors,
   navigationChromeForScheme,
   rootScreenBackgroundForScheme,
   systemBlueForScheme,
 } from "lib/theme/appColors";
-import { accountsRepo, capsulesRepo } from "repositories";
+import { capsulesRepo } from "repositories";
 import { firstParam } from "utils/searchParams";
 
 export function CapsuleEditScreen() {
@@ -42,36 +43,31 @@ export function CapsuleEditScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const capsuleId = firstParam(params.id) ?? "";
 
-  const [capsule, setCapsule] = useState<Capsule | null>(null);
-  const [queryLoading, setQueryLoading] = useState(true);
   const [savePending, setSavePending] = useState(false);
+  const queryClient = useQueryClient();
+  const { data: activeAccount, isPending: activePending } = useAccountActive();
 
-  const loadCapsule = useCallback(async () => {
-    if (!capsuleId) {
-      setCapsule(null);
-      setQueryLoading(false);
-      return;
-    }
-    setQueryLoading(true);
-    try {
-      const active = await accountsRepo.getActive();
-      if (!active?.id) {
-        setCapsule(null);
-        return;
+  const {
+    data: capsule,
+    isLoading: queryLoading,
+    refetch: refetchCapsule,
+  } = useQuery({
+    queryKey: [...queryKeys.capsules.detail(capsuleId), activeAccount?.id ?? "none"],
+    queryFn: async () => {
+      if (!activeAccount?.id) return null;
+      try {
+        return await capsulesRepo.getByIdForAccount(activeAccount.id, capsuleId);
+      } catch {
+        return null;
       }
-      const c = await capsulesRepo.getByIdForAccount(active.id, capsuleId);
-      setCapsule(c);
-    } catch {
-      setCapsule(null);
-    } finally {
-      setQueryLoading(false);
-    }
-  }, [capsuleId]);
+    },
+    enabled: Boolean(capsuleId) && !activePending,
+  });
 
   useFocusEffect(
     useCallback(() => {
-      void loadCapsule();
-    }, [loadCapsule]),
+      if (capsuleId) void refetchCapsule();
+    }, [capsuleId, refetchCapsule]),
   );
 
   useLayoutEffect(() => {
@@ -118,6 +114,12 @@ export function CapsuleEditScreen() {
           url: values.url.trim(),
           description: values.description.trim(),
         });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.capsules.detail(capsuleId),
+        });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.capsules.listForActive(),
+        });
         router.replace({ pathname: "/capsule/[id]", params: { id: capsuleId } } as unknown as Href);
       } catch (e) {
         console.error("updateCapsule failed", e);
@@ -130,7 +132,7 @@ export function CapsuleEditScreen() {
         setSubmitting(false);
       }
     },
-    [capsuleId, router],
+    [capsuleId, queryClient, router],
   );
 
   if (!capsuleId) {

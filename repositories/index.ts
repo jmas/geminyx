@@ -1,9 +1,7 @@
-import { AccountRepository } from "./accountRepository";
 import { BlobRepository } from "./blobRepository";
-import { CapsuleRepository } from "./capsuleRepository";
-import { ThreadRepository } from "./threadRepository";
 import { MessageRepository } from "./messageRepository";
 
+export { BaseRepository } from "./baseRepository";
 export {
   AccountRepository,
   accountsRepo,

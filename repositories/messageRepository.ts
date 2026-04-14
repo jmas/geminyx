@@ -11,22 +11,22 @@ import { AppBlob } from "lib/watermelon/models/Blob";
 import { Message as MessageModel } from "lib/watermelon/models/Message";
 import { Thread as ThreadModel } from "lib/watermelon/models/Thread";
 import { Q } from "@nozbe/watermelondb";
-import { getWatermelonDatabase } from "lib/watermelon/database";
+import { BaseRepository } from "repositories/baseRepository";
 import { accountsRepo } from "repositories/accountRepository";
 import { threadsRepo } from "repositories/threadRepository";
 import { logThreadMessage } from "utils/threadMessageLog";
 
-export class MessageRepository {
+export class MessageRepository extends BaseRepository {
   private messages() {
-    return getWatermelonDatabase().get<MessageModel>("messages");
+    return this.db().get<MessageModel>("messages");
   }
 
   private threads() {
-    return getWatermelonDatabase().get<ThreadModel>("threads");
+    return this.db().get<ThreadModel>("threads");
   }
 
   private blobs() {
-    return getWatermelonDatabase().get<AppBlob>("blobs");
+    return this.db().get<AppBlob>("blobs");
   }
 
   private modelToMessage(m: MessageModel): ThreadMessage {
@@ -139,7 +139,7 @@ export class MessageRepository {
         ? utf8ByteLength(bodyText)
         : message.contentLength;
 
-    const db = getWatermelonDatabase();
+    const db = this.db();
     await db.write(async () => {
       if (blobPayload != null && blobPayload.byteLength > 0 && blobId) {
         const b64 = uint8ArrayToBase64(blobPayload);

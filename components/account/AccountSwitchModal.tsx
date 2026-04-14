@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { router } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -15,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import type { Account } from "lib/models/account";
+import { queryKeys } from "lib/queryKeys";
 import { systemBlueForScheme } from "lib/theme/appColors";
 import { accountsRepo } from "repositories";
 import { avatarHueFromId, initialsFromName } from "utils/avatar";
@@ -38,37 +40,24 @@ export type AccountSwitchModalProps = {
 };
 
 export function AccountSwitchModal({ visible, onClose }: AccountSwitchModalProps) {
+  const queryClient = useQueryClient();
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
   const sheet = selectCapsuleUiPalette(scheme);
   const palette = scheme === "dark" ? colors.dark : colors.light;
   const blue = systemBlueForScheme(scheme);
 
-  const [accountsRaw, setAccountsRaw] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(false);
+  const { data: accountsRaw = [], isFetching: loading } = useQuery({
+    queryKey: queryKeys.accounts.list(),
+    queryFn: () => accountsRepo.list(),
+    enabled: visible,
+  });
 
   const accounts = useMemo(() => {
     return [...accountsRaw].sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
     );
   }, [accountsRaw]);
-
-  useEffect(() => {
-    if (!visible) return;
-    let cancelled = false;
-    void (async () => {
-      setLoading(true);
-      try {
-        const rows = await accountsRepo.list();
-        if (!cancelled) setAccountsRaw(rows);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [visible]);
 
   const [switchingId, setSwitchingId] = useState<string | null>(null);
 
@@ -81,8 +70,9 @@ export function AccountSwitchModal({ visible, onClose }: AccountSwitchModalProps
       setSwitchingId(account.id);
       try {
         await accountsRepo.patch(account.id, { isActive: true });
-        const rows = await accountsRepo.list();
-        setAccountsRaw(rows);
+        await queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.capsules.all });
+        await queryClient.invalidateQueries({ queryKey: queryKeys.threads.all });
         onClose();
       } catch (e) {
         console.error("AccountSwitchModal switch failed", e);
@@ -90,7 +80,7 @@ export function AccountSwitchModal({ visible, onClose }: AccountSwitchModalProps
         setSwitchingId(null);
       }
     },
-    [onClose],
+    [onClose, queryClient],
   );
 
   const handleCreateNew = useCallback(() => {

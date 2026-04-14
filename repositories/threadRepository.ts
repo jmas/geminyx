@@ -1,16 +1,16 @@
+import { Q } from "@nozbe/watermelondb";
 import type { Thread } from "lib/models/thread";
 import { Capsule as CapsuleModel } from "lib/watermelon/models/Capsule";
 import { Thread as ThreadModel } from "lib/watermelon/models/Thread";
-import { Q } from "@nozbe/watermelondb";
-import { getWatermelonDatabase } from "lib/watermelon/database";
+import { BaseRepository } from "repositories/baseRepository";
 
-export class ThreadRepository {
+export class ThreadRepository extends BaseRepository {
   private threads() {
-    return getWatermelonDatabase().get<ThreadModel>("threads");
+    return this.db().get<ThreadModel>("threads");
   }
 
   private capsules() {
-    return getWatermelonDatabase().get<CapsuleModel>("capsules");
+    return this.db().get<CapsuleModel>("capsules");
   }
 
   private rowToThread(d: ThreadModel, c: CapsuleModel): Thread {
@@ -66,7 +66,6 @@ export class ThreadRepository {
     }
   }
 
-  /** Load thread + capsule by id (no account scope); used for client-cert gating. */
   async getById(threadId: string): Promise<Thread | null> {
     try {
       const d = await this.threads().find(threadId);
@@ -81,7 +80,7 @@ export class ThreadRepository {
     threadId: string,
     allowed: boolean,
   ): Promise<void> {
-    const db = getWatermelonDatabase();
+    const db = this.db();
     await db.write(async () => {
       const m = await this.threads().find(threadId);
       await m.update((rec) => {

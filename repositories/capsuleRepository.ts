@@ -7,7 +7,7 @@ import { Capsule as CapsuleModel } from "lib/watermelon/models/Capsule";
 import { Message as MessageModel } from "lib/watermelon/models/Message";
 import { Thread as ThreadModel } from "lib/watermelon/models/Thread";
 import { Q } from "@nozbe/watermelondb";
-import { getWatermelonDatabase } from "lib/watermelon/database";
+import { BaseRepository } from "repositories/baseRepository";
 
 export type CapsuleInsert = {
   name: string;
@@ -25,23 +25,23 @@ export type CapsulePatch = {
   description?: string;
 };
 
-function modelToCapsule(m: CapsuleModel): Capsule {
-  return {
-    id: m.id,
-    name: m.name,
-    avatarUrl: m.avatarUrl ?? undefined,
-    url: m.url ?? undefined,
-    description: m.description?.trim() ? m.description.trim() : undefined,
-  };
-}
+export class CapsuleRepository extends BaseRepository {
+  private modelToCapsule(m: CapsuleModel): Capsule {
+    return {
+      id: m.id,
+      name: m.name,
+      avatarUrl: m.avatarUrl ?? undefined,
+      url: m.url ?? undefined,
+      description: m.description?.trim() ? m.description.trim() : undefined,
+    };
+  }
 
-export class CapsuleRepository {
   private capsules() {
-    return getWatermelonDatabase().get<CapsuleModel>("capsules");
+    return this.db().get<CapsuleModel>("capsules");
   }
 
   private threads() {
-    return getWatermelonDatabase().get<ThreadModel>("threads");
+    return this.db().get<ThreadModel>("threads");
   }
 
   async listForAccount(accountId: string): Promise<Capsule[]> {
@@ -51,7 +51,7 @@ export class CapsuleRepository {
     const sorted = [...rows].sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
     );
-    return sorted.map(modelToCapsule);
+    return sorted.map((m) => this.modelToCapsule(m));
   }
 
   async getByIdForAccount(
@@ -61,17 +61,17 @@ export class CapsuleRepository {
     try {
       const m = await this.capsules().find(capsuleId);
       if (m.accountId !== accountId) return null;
-      return modelToCapsule(m);
+      return this.modelToCapsule(m);
     } catch {
       return null;
     }
   }
 
   async patch(capsuleId: string, patch: CapsulePatch): Promise<void> {
-    const db = getWatermelonDatabase();
+    const db = this.db();
     await db.write(async () => {
       const m = await this.capsules().find(capsuleId);
-      const existing = modelToCapsule(m);
+      const existing = this.modelToCapsule(m);
       const nextName = (patch.name ?? existing.name).trim();
       const nextAvatarUrl = (patch.avatarUrl ?? existing.avatarUrl ?? "").trim();
       const nextUrl = (patch.url ?? existing.url ?? "").trim();
@@ -87,7 +87,7 @@ export class CapsuleRepository {
   }
 
   async deleteCascade(capsuleId: string): Promise<void> {
-    const db = getWatermelonDatabase();
+    const db = this.db();
     await db.write(async () => {
       const messages = db.get<MessageModel>("messages");
       const blobs = db.get<AppBlob>("blobs");
@@ -127,7 +127,7 @@ export class CapsuleRepository {
     const avatarUrl = input.avatarUrl?.trim();
     const url = input.url?.trim();
     const description = input.description?.trim();
-    const db = getWatermelonDatabase();
+    const db = this.db();
     await db.write(async () => {
       await this.capsules().create((rec) => {
         rec._raw.id = id;

@@ -1,7 +1,8 @@
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
-import { useCallback, useLayoutEffect, useMemo, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -12,18 +13,18 @@ import {
   useColorScheme,
   View,
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
 import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
-import type { Capsule } from "lib/models/capsule";
+import { useAccountActive } from "hooks/account/useAccountActive";
+import { queryKeys } from "lib/queryKeys";
 import {
   appColors,
   navigationChromeForScheme,
   rootScreenBackgroundForScheme,
   systemBlueForScheme,
 } from "lib/theme/appColors";
-import { accountsRepo, capsulesRepo } from "repositories";
+import { capsulesRepo } from "repositories";
 import { firstParam } from "utils/searchParams";
 
 export function CapsuleViewScreen() {
@@ -40,35 +41,30 @@ export function CapsuleViewScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const capsuleId = firstParam(params.id) ?? "";
 
-  const [capsule, setCapsule] = useState<Capsule | null>(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const { data: activeAccount, isPending: activePending } = useAccountActive();
 
-  const loadCapsule = useCallback(async () => {
-    if (!capsuleId) {
-      setCapsule(null);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      const active = await accountsRepo.getActive();
-      if (!active?.id) {
-        setCapsule(null);
-        return;
+  const {
+    data: capsule,
+    isLoading: loading,
+    refetch: refetchCapsule,
+  } = useQuery({
+    queryKey: [...queryKeys.capsules.detail(capsuleId), activeAccount?.id ?? "none"],
+    queryFn: async () => {
+      if (!activeAccount?.id) return null;
+      try {
+        return await capsulesRepo.getByIdForAccount(activeAccount.id, capsuleId);
+      } catch {
+        return null;
       }
-      const c = await capsulesRepo.getByIdForAccount(active.id, capsuleId);
-      setCapsule(c);
-    } catch {
-      setCapsule(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [capsuleId]);
+    },
+    enabled: Boolean(capsuleId) && !activePending,
+  });
 
   useFocusEffect(
     useCallback(() => {
-      void loadCapsule();
-    }, [loadCapsule]),
+      if (capsuleId) void refetchCapsule();
+    }, [capsuleId, refetchCapsule]),
   );
 
   const notFound = !loading && !capsule;
@@ -79,10 +75,6 @@ export function CapsuleViewScreen() {
       title: "Capsule",
     });
   }, [navigation, scheme]);
-
-  const refreshLists = useCallback(async () => {
-    await loadCapsule();
-  }, [loadCapsule]);
 
   const onOpenThread = useCallback(() => {
     if (!capsule) return;
@@ -106,7 +98,12 @@ export function CapsuleViewScreen() {
             void (async () => {
               try {
                 await capsulesRepo.deleteCascade(capsule.id);
-                await refreshLists();
+                await queryClient.invalidateQueries({
+                  queryKey: queryKeys.capsules.all,
+                });
+                await queryClient.invalidateQueries({
+                  queryKey: queryKeys.threads.all,
+                });
                 router.replace("/(tabs)/threads" as Href);
               } catch (e) {
                 console.error(e);
@@ -117,7 +114,7 @@ export function CapsuleViewScreen() {
         },
       ],
     );
-  }, [capsule, refreshLists, router]);
+  }, [capsule, queryClient, router]);
 
   const onEdit = useCallback(() => {
     if (!capsule) return;

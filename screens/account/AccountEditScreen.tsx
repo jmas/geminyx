@@ -1,11 +1,12 @@
-import { useFocusEffect } from "@react-navigation/native";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { FormikHelpers } from "formik";
 import { router } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import { Alert, Pressable, StyleSheet, Text, useColorScheme, View } from "react-native";
 import { AccountForm, type AccountFormPalette, type AccountFormValues } from "components/account/AccountForm";
-import type { Account } from "lib/models/account";
+import { useAccountActive } from "hooks/account/useAccountActive";
 import { appColors, systemBlueForScheme } from "lib/theme/appColors";
+import { queryKeys } from "lib/queryKeys";
 import { accountsRepo } from "repositories";
 
 const colors = {
@@ -52,25 +53,28 @@ export function AccountEditScreen() {
     [palette, scheme],
   );
 
-  const [activeAccount, setActiveAccount] = useState<Account | null>(null);
-  const [queryLoading, setQueryLoading] = useState(true);
-  const [deletePending, setDeletePending] = useState(false);
+  const queryClient = useQueryClient();
+  const {
+    data: activeAccount,
+    isLoading: isLoadingAccount,
+    isError: isLoadError,
+    error: loadError,
+  } = useAccountActive();
 
-  const loadActive = useCallback(async () => {
-    setQueryLoading(true);
-    try {
-      const a = await accountsRepo.getActive();
-      setActiveAccount(a ?? null);
-    } finally {
-      setQueryLoading(false);
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      void loadActive();
-    }, [loadActive]),
-  );
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => accountsRepo.deleteById(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
+      router.back();
+    },
+    onError: (e) => {
+      console.error("AccountEditScreen delete failed", e);
+      Alert.alert(
+        "Could not delete account",
+        e instanceof Error ? e.message : String(e),
+      );
+    },
+  });
 
   const initialValues: AccountFormValues | undefined = useMemo(() => {
     if (!activeAccount) return undefined;
@@ -92,25 +96,13 @@ export function AccountEditScreen() {
         {
           text: "Delete",
           style: "destructive",
-          onPress: async () => {
-            try {
-              setDeletePending(true);
-              await accountsRepo.deleteById(activeAccount.id);
-              router.back();
-            } catch (e) {
-              console.error("AccountEditScreen delete failed", e);
-              Alert.alert(
-                "Could not delete account",
-                e instanceof Error ? e.message : String(e),
-              );
-            } finally {
-              setDeletePending(false);
-            }
+          onPress: () => {
+            void deleteMutation.mutateAsync(activeAccount.id);
           },
         },
       ],
     );
-  }, [activeAccount]);
+  }, [activeAccount, deleteMutation]);
 
   const handleSubmit = useCallback(
     async (
@@ -139,11 +131,23 @@ export function AccountEditScreen() {
     [activeAccount],
   );
 
-  if (queryLoading) {
+  if (isLoadingAccount) {
     return (
       <View style={[styles.screen, { backgroundColor: palette.background }]}>
         <Text style={[styles.loadingText, { color: palette.textSecondary }]}>
           Loading…
+        </Text>
+      </View>
+    );
+  }
+
+  if (isLoadError) {
+    return (
+      <View style={[styles.screen, { backgroundColor: palette.background }]}>
+        <Text style={[styles.loadingText, { color: palette.error }]}>
+          {loadError instanceof Error
+            ? loadError.message
+            : "Could not load account."}
         </Text>
       </View>
     );
@@ -167,14 +171,14 @@ export function AccountEditScreen() {
         footerExtra={
           <Pressable
             onPress={handleDelete}
-            disabled={deletePending}
+            disabled={deleteMutation.isPending}
             style={({ pressed }) => [
               styles.deleteBtn,
               {
                 borderColor: palette.error,
-                opacity: deletePending ? 0.6 : 1,
+                opacity: deleteMutation.isPending ? 0.6 : 1,
               },
-              pressed && !deletePending
+              pressed && !deleteMutation.isPending
                 ? {
                     backgroundColor:
                       scheme === "dark"

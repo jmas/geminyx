@@ -1,4 +1,4 @@
-import { useFocusEffect } from "@react-navigation/native";
+import { useQueryClient } from "@tanstack/react-query";
 import * as DocumentPicker from "expo-document-picker";
 import { readAsStringAsync } from "expo-file-system/legacy";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -14,7 +14,8 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { Account } from "lib/models/account";
+import { useAccountActive } from "hooks/account/useAccountActive";
+import { queryKeys } from "lib/queryKeys";
 import { appColors } from "lib/theme/appColors";
 import { accountsRepo } from "repositories";
 
@@ -50,25 +51,12 @@ export function AccountCertificateScreen() {
   const insets = useSafeAreaInsets();
   const palette = scheme === "dark" ? colors.dark : colors.light;
 
-  const [activeAccount, setActiveAccount] = useState<Account | null>(null);
-  const [profileLoading, setProfileLoading] = useState(true);
+  const queryClient = useQueryClient();
+  const {
+    data: activeAccount,
+    isFetching: profileLoading,
+  } = useAccountActive();
   const [busy, setBusy] = useState(false);
-
-  const loadActive = useCallback(async () => {
-    setProfileLoading(true);
-    try {
-      const a = await accountsRepo.getActive();
-      setActiveAccount(a ?? null);
-    } finally {
-      setProfileLoading(false);
-    }
-  }, []);
-
-  useFocusEffect(
-    useCallback(() => {
-      void loadActive();
-    }, [loadActive]),
-  );
 
   const [passphraseDraft, setPassphraseDraft] = useState("");
   useEffect(() => {
@@ -102,7 +90,9 @@ export function AccountCertificateScreen() {
         await accountsRepo.patch(activeAccount.id, {
           geminiClientP12Base64: base64,
         });
-        await loadActive();
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.accounts.active(),
+        });
       } finally {
         setBusy(false);
       }
@@ -114,7 +104,7 @@ export function AccountCertificateScreen() {
       console.error("handleImportPkcs12", e);
       Alert.alert("Certificate", e instanceof Error ? e.message : String(e));
     }
-  }, [activeAccount, loadActive]);
+  }, [activeAccount, queryClient]);
 
   const handleSavePassphrase = useCallback(async () => {
     if (!activeAccount) return;
@@ -123,14 +113,16 @@ export function AccountCertificateScreen() {
       await accountsRepo.patch(activeAccount.id, {
         geminiClientP12Passphrase: passphraseDraft,
       });
-      await loadActive();
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.accounts.active(),
+      });
       Alert.alert("Certificate", "Passphrase saved.");
     } catch (e) {
       Alert.alert("Certificate", e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
-  }, [activeAccount, passphraseDraft, loadActive]);
+  }, [activeAccount, passphraseDraft, queryClient]);
 
   const handleClearCert = useCallback(() => {
     if (!activeAccount) return;
@@ -150,7 +142,9 @@ export function AccountCertificateScreen() {
                 geminiClientP12Passphrase: null,
               });
               setPassphraseDraft("");
-              await loadActive();
+              await queryClient.invalidateQueries({
+                queryKey: queryKeys.accounts.active(),
+              });
             } catch (e) {
               Alert.alert(
                 "Certificate",
@@ -163,7 +157,7 @@ export function AccountCertificateScreen() {
         },
       ],
     );
-  }, [activeAccount, loadActive]);
+  }, [activeAccount, queryClient]);
 
   return (
     <View style={[styles.screen, { backgroundColor: palette.background }]}>

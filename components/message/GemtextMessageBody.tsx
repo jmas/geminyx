@@ -1,6 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Modal,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
   Platform,
   ScrollView,
   StyleSheet,
@@ -8,12 +15,16 @@ import {
   View,
   useWindowDimensions,
 } from "react-native";
+import type ViewShot from "react-native-view-shot";
 import { resolveGeminiLinkHref } from "lib/models/gemini";
 import { parseGemtext, type GemtextSegment } from "utils/parseGemtext";
 import { parseAnsiSgrToRuns } from "utils/parseAnsiSgr";
 import { CodeBlockContextMenu } from "components/message/CodeBlockContextMenu";
-import ViewShot from "react-native-view-shot";
-import * as Clipboard from "expo-clipboard";
+import { setImageAsync } from "lib/clipboard";
+
+const PreBlockExportModal = lazy(
+  () => import("components/message/PreBlockExportModal"),
+);
 
 const mono = Platform.select({
   ios: "JetBrainsMono_400Regular",
@@ -460,7 +471,7 @@ function PreBlock({
   incomingChrome: IncomingGemtextChrome;
   codeBlockTheme: CodeBlockTheme;
 }) {
-  const exportShotRef = useRef<ViewShot | null>(null);
+  const exportShotRef = useRef<InstanceType<typeof ViewShot> | null>(null);
   const captureViewRef = useRef<View | null>(null);
   const lines = useMemo(() => text.split("\n"), [text]);
   const terminal = codeBlockTheme === "terminal";
@@ -537,7 +548,7 @@ function PreBlock({
       const base64 = await exportShotRef.current.capture?.();
       if (!base64 || base64.length < 64)
         throw new Error("Image capture returned empty data.");
-      await Clipboard.setImageAsync(base64);
+      await setImageAsync(base64);
       pending.resolve();
     } catch (e) {
       pending.reject(e);
@@ -592,51 +603,29 @@ function PreBlock({
           </ScrollView>
         </View>
 
-        <Modal
-          visible={exportOpen}
-          transparent
-          animationType="none"
-          onShow={() => {
-            // Next frame to ensure text rasterizes.
-            requestAnimationFrame(() => {
-              void doExportCapture();
-            });
-          }}
-        >
-          <View style={styles.exportModalRoot} pointerEvents="none">
-            <ViewShot
+        {exportOpen ? (
+          <Suspense fallback={null}>
+            <PreBlockExportModal
               ref={exportShotRef}
-              options={{
-                format: "png",
-                quality: 1,
-                result: "base64",
-                width: captureWidth,
-                height: Math.ceil(captureHeight),
+              visible={exportOpen}
+              onShow={() => {
+                requestAnimationFrame(() => {
+                  void doExportCapture();
+                });
               }}
-            >
-              <View style={preCaptureContainerStyle}>
-                <View style={styles.preTextColumn}>
-                  {lines.map((line, li) => (
-                    <Text
-                      key={`exp-${li}`}
-                      numberOfLines={1}
-                      {...(Platform.OS === "android"
-                        ? { textBreakStrategy: "simple" as const }
-                        : {})}
-                      style={[styles.preText, { color: preTextColor }]}
-                    >
-                      {parseAnsiSgrToRuns(line, preTextColor).map((run, ri) => (
-                        <Text key={ri} style={run.style}>
-                          {run.text}
-                        </Text>
-                      ))}
-                    </Text>
-                  ))}
-                </View>
-              </View>
-            </ViewShot>
-          </View>
-        </Modal>
+              captureWidth={captureWidth}
+              captureHeight={Math.ceil(captureHeight)}
+              lines={lines}
+              preTextColor={preTextColor}
+              preCaptureContainerStyle={preCaptureContainerStyle}
+              styles={{
+                exportModalRoot: styles.exportModalRoot,
+                preTextColumn: styles.preTextColumn,
+                preText: styles.preText,
+              }}
+            />
+          </Suspense>
+        ) : null}
 
         {/* Hidden capture: plain View so view-shot can capture full bounds on Fabric. */}
         <View

@@ -1,4 +1,5 @@
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { router, type Href } from "expo-router";
 import {
@@ -27,12 +28,14 @@ import {
   type CapsuleListRowPalette,
 } from "components/capsule/capsuleUiPalette";
 import { SwipeToDeleteRow } from "components/ui/SwipeToDeleteRow";
+import { useAccountActive } from "hooks/account/useAccountActive";
 import type { Capsule } from "lib/models/capsule";
+import { queryKeys } from "lib/queryKeys";
 import {
   navigationChromeForScheme,
   systemBlueForScheme,
 } from "lib/theme/appColors";
-import { accountsRepo, capsulesRepo } from "repositories";
+import { capsulesRepo } from "repositories";
 import { avatarHueFromId, initialsFromName } from "utils/avatar";
 
 const LONG_PRESS_MS = 450;
@@ -50,26 +53,31 @@ export function CapsuleListScreen() {
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const [capsules, setCapsules] = useState<Capsule[]>([]);
-
-  const loadCapsules = useCallback(async () => {
-    const a = await accountsRepo.getActive();
-    if (!a?.id) {
-      setCapsules([]);
-      return;
-    }
-    setCapsules(await capsulesRepo.listForAccount(a.id));
-  }, []);
+  const queryClient = useQueryClient();
+  const { data: activeAccount, isPending: activePending } = useAccountActive();
+  const {
+    data: capsules = [],
+    refetch: refetchCapsules,
+  } = useQuery({
+    queryKey: [...queryKeys.capsules.listForActive(), activeAccount?.id ?? "none"],
+    queryFn: async () => {
+      if (!activeAccount?.id) return [];
+      return capsulesRepo.listForAccount(activeAccount.id);
+    },
+    enabled: !activePending,
+  });
 
   useFocusEffect(
     useCallback(() => {
-      void loadCapsules();
-    }, [loadCapsules]),
+      void refetchCapsules();
+    }, [refetchCapsules]),
   );
 
   const refreshLists = useCallback(async () => {
-    await loadCapsules();
-  }, [loadCapsules]);
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.capsules.listForActive(),
+    });
+  }, [queryClient]);
 
   const exitSelectMode = useCallback(() => {
     setSelecting(false);

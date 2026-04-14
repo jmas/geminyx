@@ -5,8 +5,7 @@ import {
   Platform,
   View,
 } from "react-native";
-import * as Clipboard from "expo-clipboard";
-import { captureRef } from "react-native-view-shot";
+import { setImageAsync, setStringAsync } from "lib/clipboard";
 
 export type CodeBlockContextMenuProps = {
   text: string;
@@ -29,7 +28,7 @@ export type CodeBlockContextMenuProps = {
 };
 
 async function copyText(text: string) {
-  await Clipboard.setStringAsync(text);
+  await setStringAsync(text);
 }
 
 function resolveCaptureTarget(
@@ -46,6 +45,7 @@ async function copyRefAsPngToClipboard(
   ref: React.RefObject<any>,
   captureOptions?: CodeBlockContextMenuProps["captureOptions"],
 ) {
+  const { captureRef } = await import("react-native-view-shot");
   const target = resolveCaptureTarget(ref, captureOptions);
   const base64 = await captureRef(target, {
     format: "png",
@@ -60,7 +60,7 @@ async function copyRefAsPngToClipboard(
     throw new Error("Image capture returned empty data.");
   }
 
-  await Clipboard.setImageAsync(base64);
+  await setImageAsync(base64);
 }
 
 export function CodeBlockContextMenu({

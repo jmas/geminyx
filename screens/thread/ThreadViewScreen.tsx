@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useHeaderHeight } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
 import type { GemtextLinkAction } from "components/message/GemtextMessageBody";
 import { MessageForm } from "components/message/MessageForm";
@@ -11,10 +12,9 @@ import {
 } from "components/message/MessageList";
 import { BlockingProgressModal } from "components/ui/BlockingProgressModal";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
+import { useAccountActive } from "hooks/account/useAccountActive";
 import { useMessageCreate } from "hooks/message/useMessageCreate";
-import type { Account } from "lib/models/account";
 import type { Capsule } from "lib/models/capsule";
-import type { Thread } from "lib/models/thread";
 import type { ThreadMessage } from "lib/models/threadMessage";
 import {
   geminiDocumentBaseUrlForMessage,
@@ -22,6 +22,7 @@ import {
   isCapsuleRootRequestPath,
   suggestedCapsuleNameFromGeminiUrl,
 } from "lib/models/gemini";
+import { queryKeys } from "lib/queryKeys";
 import { MESSAGES_PAGE_SIZE } from "lib/resources/messages";
 import { appColors, navigationChromeForScheme } from "lib/theme/appColors";
 import {
@@ -127,26 +128,24 @@ export function ThreadViewScreen() {
   const CERT_GEN_TIMEOUT_MS = 150_000; // 2.5 minutes
   const [certGenProgressKey, setCertGenProgressKey] = useState(0);
 
-  const [threadRow, setThreadRow] = useState<Thread | null>(null);
-  const [activeAccount, setActiveAccount] = useState<Account | null>(null);
+  const queryClient = useQueryClient();
+  const { data: activeAccount, isPending: activePending } = useAccountActive();
+
+  const { data: threadRow, refetch: refetchThreadRow } = useQuery({
+    queryKey: [...queryKeys.threads.detail(threadId), activeAccount?.id ?? "none"],
+    queryFn: async () => {
+      if (!threadId || !activeAccount?.id) return null;
+      return threadsRepo.getByIdForAccount(activeAccount.id, threadId);
+    },
+    enabled: Boolean(threadId) && !activePending,
+  });
 
   messagesRef.current = messages;
 
-  const loadThreadAndAccount = useCallback(async () => {
-    const acc = await accountsRepo.getActive();
-    setActiveAccount(acc ?? null);
-    if (threadId && acc?.id) {
-      const d = await threadsRepo.getByIdForAccount(acc.id, threadId);
-      setThreadRow(d ?? null);
-    } else {
-      setThreadRow(null);
-    }
-  }, [threadId]);
-
   useFocusEffect(
     useCallback(() => {
-      void loadThreadAndAccount();
-    }, [loadThreadAndAccount]),
+      if (threadId) void refetchThreadRow();
+    }, [refetchThreadRow, threadId]),
   );
 
   const loadInitialMessages = useCallback(async () => {
@@ -226,9 +225,14 @@ export function ThreadViewScreen() {
   }, []);
 
   const refreshThreadContext = useCallback(async () => {
-    await loadThreadAndAccount();
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.accounts.active(),
+    });
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.threads.detail(threadId),
+    });
     await loadInitialMessages();
-  }, [loadThreadAndAccount, loadInitialMessages]);
+  }, [queryClient, threadId, loadInitialMessages]);
 
   const { flowPending, submitMessageFlow } = useMessageCreate({
     threadId,
@@ -336,7 +340,10 @@ export function ThreadViewScreen() {
 
       void (async () => {
         try {
-          const active = await accountsRepo.getActive();
+          const active = await queryClient.fetchQuery({
+            queryKey: queryKeys.accounts.active(),
+            queryFn: () => accountsRepo.getActive(),
+          });
           if (!active?.id) {
             Alert.alert("No account", "Add or select an account first.");
             return;
@@ -369,7 +376,7 @@ export function ThreadViewScreen() {
         }
       })();
     },
-    [capsuleUrl, router, submitMessageFlow],
+    [capsuleUrl, queryClient, router, submitMessageFlow],
   );
 
   const title = useMemo(() => {

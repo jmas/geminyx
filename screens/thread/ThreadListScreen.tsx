@@ -1,4 +1,5 @@
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { router, type Href } from "expo-router";
 import {
@@ -18,16 +19,17 @@ import {
   useColorScheme,
   View,
 } from "react-native";
-import { useNavigation } from "@react-navigation/native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { SwipeToDeleteRow } from "components/ui/SwipeToDeleteRow";
+import { useAccountActive } from "hooks/account/useAccountActive";
 import type { Thread } from "lib/models/thread";
+import { queryKeys } from "lib/queryKeys";
 import {
   appColors,
   navigationChromeForScheme,
   systemBlueForScheme,
 } from "lib/theme/appColors";
-import { accountsRepo, capsulesRepo, threadsRepo } from "repositories";
+import { capsulesRepo, threadsRepo } from "repositories";
 import { avatarHueFromId, initialsFromName } from "utils/avatar";
 import { formatLastMessageDate } from "utils/formatLastMessageDate";
 
@@ -62,26 +64,34 @@ export function ThreadListScreen() {
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const [threads, setThreads] = useState<Thread[]>([]);
-
-  const loadThreads = useCallback(async () => {
-    const a = await accountsRepo.getActive();
-    if (!a?.id) {
-      setThreads([]);
-      return;
-    }
-    setThreads(await threadsRepo.listForAccount(a.id));
-  }, []);
+  const queryClient = useQueryClient();
+  const { data: activeAccount, isPending: activePending } = useAccountActive();
+  const {
+    data: threads = [],
+    refetch: refetchThreads,
+  } = useQuery({
+    queryKey: [...queryKeys.threads.listForActive(), activeAccount?.id ?? "none"],
+    queryFn: async () => {
+      if (!activeAccount?.id) return [];
+      return threadsRepo.listForAccount(activeAccount.id);
+    },
+    enabled: !activePending,
+  });
 
   useFocusEffect(
     useCallback(() => {
-      void loadThreads();
-    }, [loadThreads]),
+      void refetchThreads();
+    }, [refetchThreads]),
   );
 
   const refreshLists = useCallback(async () => {
-    await loadThreads();
-  }, [loadThreads]);
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.threads.listForActive(),
+    });
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.capsules.listForActive(),
+    });
+  }, [queryClient]);
 
   const exitSelectMode = useCallback(() => {
     setSelecting(false);

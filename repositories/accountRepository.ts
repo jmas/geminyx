@@ -2,7 +2,7 @@ import type { Account } from "lib/models/account";
 import { newId } from "lib/db/utils";
 import { Account as AccountModel } from "lib/watermelon/models/Account";
 import { Q } from "@nozbe/watermelondb";
-import { getWatermelonDatabase } from "lib/watermelon/database";
+import { BaseRepository } from "repositories/baseRepository";
 import { capsulesRepo } from "repositories/capsuleRepository";
 
 export type AccountInsert = {
@@ -26,24 +26,24 @@ export type AccountPatch = Partial<
   geminiClientP12Passphrase?: string | null;
 };
 
-function modelToAccount(m: AccountModel): Account {
-  return {
-    id: m.id,
-    name: m.name,
-    email: m.email?.trim() ? m.email.trim() : undefined,
-    avatarUrl: m.avatarUrl ?? undefined,
-    capsuleUrl: m.capsuleUrl ?? undefined,
-    geminiClientP12Base64: m.geminiClientP12Base64?.trim()
-      ? m.geminiClientP12Base64.trim()
-      : undefined,
-    geminiClientP12Passphrase: m.geminiClientP12Passphrase ?? undefined,
-    isActive: m.isActive,
-  };
-}
+export class AccountRepository extends BaseRepository {
+  private modelToAccount(m: AccountModel): Account {
+    return {
+      id: m.id,
+      name: m.name,
+      email: m.email?.trim() ? m.email.trim() : undefined,
+      avatarUrl: m.avatarUrl ?? undefined,
+      capsuleUrl: m.capsuleUrl ?? undefined,
+      geminiClientP12Base64: m.geminiClientP12Base64?.trim()
+        ? m.geminiClientP12Base64.trim()
+        : undefined,
+      geminiClientP12Passphrase: m.geminiClientP12Passphrase ?? undefined,
+      isActive: m.isActive,
+    };
+  }
 
-export class AccountRepository {
   private accounts() {
-    return getWatermelonDatabase().get<AccountModel>("accounts");
+    return this.db().get<AccountModel>("accounts");
   }
 
   async list(options?: { activeOnly?: boolean }): Promise<Account[]> {
@@ -59,13 +59,13 @@ export class AccountRepository {
     const sorted = [...rows].sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
     );
-    return sorted.map(modelToAccount);
+    return sorted.map((m) => this.modelToAccount(m));
   }
 
   async getById(accountId: string): Promise<Account | null> {
     try {
       const m = await this.accounts().find(accountId);
-      return modelToAccount(m);
+      return this.modelToAccount(m);
     } catch {
       return null;
     }
@@ -76,11 +76,11 @@ export class AccountRepository {
       .query(Q.where("is_active", true))
       .fetch();
     const m = rows[0];
-    return m ? modelToAccount(m) : null;
+    return m ? this.modelToAccount(m) : null;
   }
 
   async insert(input: AccountInsert): Promise<Account> {
-    const db = getWatermelonDatabase();
+    const db = this.db();
     const id = input.id ?? newId("acc");
     const name = input.name.trim();
     const email = input.email?.trim() ? input.email.trim() : undefined;
@@ -146,7 +146,7 @@ export class AccountRepository {
   }
 
   async patch(accountId: string, patch: AccountPatch): Promise<void> {
-    const db = getWatermelonDatabase();
+    const db = this.db();
     await db.write(async () => {
       if (patch.isActive === true) {
         const activeRows = await this.accounts()
@@ -187,7 +187,7 @@ export class AccountRepository {
   }
 
   async deleteById(accountId: string): Promise<Account | null> {
-    const db = getWatermelonDatabase();
+    const db = this.db();
     const existing = await this.getById(accountId);
     if (!existing) return null;
 

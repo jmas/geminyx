@@ -1,26 +1,15 @@
-import { Platform } from "react-native";
-import { File, Paths } from "expo-file-system";
-import { Account } from "lib/watermelon/models/Account";
-import { getWatermelonDatabase } from "lib/watermelon";
-
-function geminyxWatermelonFile(): File {
-  return new File(Paths.document, "geminyx.db");
-}
+import { getWatermelonDatabase } from "lib/watermelon/database";
+import { accountsRepo } from "repositories";
 
 /**
- * True when a local database file exists (native) and contains at least one account row.
- * On first launch there is no DB file until onboarding completes.
+ * True when the local DB is openable and there is an active account.
+ * Opening the DB is required before querying; we do not rely on guessing the SQLite file path.
  */
 export async function isAppDatabaseReady(): Promise<boolean> {
   try {
-    if (Platform.OS !== "web") {
-      const file = geminyxWatermelonFile();
-      if (!file.exists) return false;
-    }
-
-    const db = getWatermelonDatabase();
-    const count = await db.get<Account>("accounts").query().fetchCount();
-    return count > 0;
+    getWatermelonDatabase();
+    const active = await accountsRepo.getActive();
+    return active !== null;
   } catch {
     return false;
   }
