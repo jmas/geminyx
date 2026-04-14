@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import {
   Alert,
   Platform,
@@ -12,32 +12,16 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { notifyLocalDatabaseErased } from "lib/localDatabaseErase";
 import { resetLocalDatabase } from "lib/databaseSetup";
-import { appColors } from "lib/theme/appColors";
+import { developerScreenPaletteForScheme } from "lib/theme/semanticUi";
 import { alertError } from "utils/error";
-
-const colors = {
-  light: {
-    background: appColors.screenLight,
-    textPrimary: "#000000",
-    textSecondary: "#8e8e93",
-    danger: "#c62828",
-    dangerPressed: "rgba(198, 40, 40, 0.12)",
-    cardBg: "rgba(120, 120, 128, 0.12)",
-  },
-  dark: {
-    background: appColors.screenDark,
-    textPrimary: "#f2f2f7",
-    textSecondary: "rgba(235, 235, 245, 0.55)",
-    danger: "#ff6b6b",
-    dangerPressed: "rgba(255, 107, 107, 0.15)",
-    cardBg: "rgba(120, 120, 128, 0.24)",
-  },
-} as const;
 
 export function AccountDeveloperScreen() {
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
-  const palette = scheme === "dark" ? colors.dark : colors.light;
+  const palette = useMemo(
+    () => developerScreenPaletteForScheme(scheme),
+    [scheme],
+  );
 
   const showEraseLocalDatabase = Platform.OS !== "web";
 

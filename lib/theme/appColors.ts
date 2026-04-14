@@ -11,8 +11,13 @@ export const appColors = {
   systemBlueDark: "#0a84ff",
   destructive: "#ff3b30",
   screenLight: "#ffffff",
-  /** Softer than pure black; aligns list/chat/sheet roots in dark mode (non‑iOS). */
-  screenDark: "#121212",
+  /**
+   * Light mode outer area behind grouped lists (matches iOS `systemGroupedBackground`).
+   * Use with `secondarySystemGroupedBackground`-style surfaces for row/card “foreground”.
+   */
+  screenGroupedLight: "#f2f2f7",
+  /** Dark mode root background — matches iOS `systemBackground` / Material baseline black. */
+  screenDark: "#000000",
   headerTitleLight: "#000000",
   headerTitleDark: "#f2f2f7",
 } as const;
@@ -28,13 +33,14 @@ export function systemBlueForScheme(
     : appColors.systemBlueLight;
 }
 
+/** Tab bar, stack headers, and full-screen roots — grouped gray (light) like iOS Settings. */
 export function rootScreenBackgroundForScheme(
   scheme: "light" | "dark" | null | undefined,
 ): ColorValue {
   if (Platform.OS === "ios") {
-    return PlatformColor("systemBackground");
+    return PlatformColor("systemGroupedBackground");
   }
-  return scheme === "dark" ? appColors.screenDark : appColors.screenLight;
+  return scheme === "dark" ? appColors.screenDark : appColors.screenGroupedLight;
 }
 
 export function headerTitleColorForScheme(
@@ -67,7 +73,7 @@ export function systemOrangeColor(): ColorValue {
 /** Settings / profile lists — iOS dynamic colors. */
 export function iosScreenContentPalette() {
   return {
-    background: PlatformColor("systemBackground"),
+    background: PlatformColor("systemGroupedBackground"),
     textPrimary: PlatformColor("label"),
     textSecondary: PlatformColor("secondaryLabel"),
     textTertiary: PlatformColor("tertiaryLabel"),
@@ -84,7 +90,8 @@ export type IosScreenContentPalette = ReturnType<
 
 export function iosThreadListPalette() {
   return {
-    background: PlatformColor("systemBackground"),
+    background: PlatformColor("systemGroupedBackground"),
+    listRowSurface: PlatformColor("secondarySystemGroupedBackground"),
     textPrimary: PlatformColor("label"),
     textSecondary: PlatformColor("secondaryLabel"),
     separator: PlatformColor("separator"),
@@ -108,7 +115,7 @@ export type IosAccountSwitchPalette = ReturnType<
 
 export function iosIntroScreenPalette() {
   return {
-    background: PlatformColor("systemBackground"),
+    background: PlatformColor("systemGroupedBackground"),
     textPrimary: PlatformColor("label"),
     textSecondary: PlatformColor("secondaryLabel"),
     separator: PlatformColor("separator"),
@@ -132,7 +139,7 @@ export function iosAccountFormPalette(): {
   primaryButtonBg: ColorValue;
 } {
   return {
-    background: PlatformColor("systemBackground"),
+    background: PlatformColor("systemGroupedBackground"),
     textPrimary: PlatformColor("label"),
     textSecondary: PlatformColor("secondaryLabel"),
     separator: PlatformColor("separator"),
@@ -141,7 +148,8 @@ export function iosAccountFormPalette(): {
     fieldText: PlatformColor("label"),
     placeholder: PlatformColor("placeholderText"),
     error: PlatformColor("systemRed"),
-    primaryLabel: PlatformColor("white"),
+    /** Solid white on systemBlue — use hex; `PlatformColor("white")` is not a valid iOS dynamic token. */
+    primaryLabel: "#ffffff",
     primaryButtonBg: PlatformColor("systemBlue"),
   };
 }

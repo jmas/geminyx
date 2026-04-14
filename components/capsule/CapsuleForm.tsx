@@ -20,6 +20,7 @@ import * as yup from "yup";
 import { rnEmojiKeyboardTheme } from "components/capsule/capsuleEmojiKeyboardTheme";
 import { useKeyboardHeight } from "hooks/useKeyboardHeight";
 import { suggestedCapsuleNameFromGeminiUrl } from "lib/models/gemini";
+import { modalBackdropScrim } from "lib/theme/semanticUi";
 
 export type CapsuleFormValues = {
   name: string;
@@ -600,7 +601,7 @@ const styles = StyleSheet.create({
   },
   catModalBackdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    backgroundColor: modalBackdropScrim,
   },
   catModalSheet: {
     marginHorizontal: 12,

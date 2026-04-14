@@ -19,11 +19,8 @@ import {
   type ColorValue,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  appColors,
-  iosIntroScreenPalette,
-  systemBlueForScheme,
-} from "lib/theme/appColors";
+import { iosIntroScreenPalette, systemBlueForScheme } from "lib/theme/appColors";
+import { semanticUiPaletteForScheme } from "lib/theme/semanticUi";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -82,7 +79,14 @@ export function OnboardingScreen({ onFinishIntro }: OnboardingScreenProps) {
 
   const palette = useMemo(() => {
     if (Platform.OS === "ios") return iosIntroScreenPalette();
-    return scheme === "dark" ? colors.dark : colors.light;
+    const s = semanticUiPaletteForScheme(scheme);
+    return {
+      background: s.systemGroupedBackground,
+      textPrimary: s.label,
+      textSecondary: s.secondaryLabel,
+      separator: s.separator,
+      dotInactive: s.systemGray4,
+    };
   }, [scheme]);
 
   const onMomentumScrollEnd = useCallback(
@@ -305,23 +309,6 @@ function OnboardingIllustration({
     </View>
   );
 }
-
-const colors = {
-  light: {
-    background: appColors.screenLight,
-    textPrimary: "#000000",
-    textSecondary: "#3c3c43",
-    separator: "rgba(60, 60, 67, 0.29)",
-    dotInactive: "rgba(120, 120, 128, 0.35)",
-  },
-  dark: {
-    background: appColors.screenDark,
-    textPrimary: "#f2f2f7",
-    textSecondary: "rgba(235, 235, 245, 0.75)",
-    separator: "rgba(255, 255, 255, 0.12)",
-    dotInactive: "rgba(235, 235, 245, 0.25)",
-  },
-} as const;
 
 const styles = StyleSheet.create({
   screen: {

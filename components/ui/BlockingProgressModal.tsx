@@ -1,14 +1,11 @@
 import {
   ActivityIndicator,
   Modal,
-  Platform,
-  PlatformColor,
   Pressable,
   StyleSheet,
   Text,
   useColorScheme,
   View,
-  type ColorValue,
 } from "react-native";
 import Animated, {
   Easing,
@@ -17,6 +14,10 @@ import Animated, {
   withTiming,
 } from "react-native-reanimated";
 import { useEffect, useMemo } from "react";
+import {
+  blockingProgressChromeForScheme,
+  modalBackdropScrim,
+} from "lib/theme/semanticUi";
 
 export type BlockingProgressModalProps = {
   visible: boolean;
@@ -48,25 +49,10 @@ export function BlockingProgressModal({
 
   const progress = useSharedValue(0);
 
-  const chrome = useMemo(() => {
-    if (Platform.OS === "ios") {
-      return {
-        card: PlatformColor("systemBackground") as ColorValue,
-        title: PlatformColor("label") as ColorValue,
-        message: PlatformColor("secondaryLabel") as ColorValue,
-        track: PlatformColor("systemGray5") as ColorValue,
-        fill: PlatformColor("systemBlue") as ColorValue,
-      };
-    }
-    const dark = scheme === "dark";
-    return {
-      card: dark ? "#1c1c1e" : "#ffffff",
-      title: dark ? "#f2f2f7" : "#111827",
-      message: dark ? "rgba(235, 235, 245, 0.75)" : "#374151",
-      track: dark ? "#3a3a3c" : "#e5e7eb",
-      fill: dark ? "#0a84ff" : "#3390ec",
-    };
-  }, [scheme]);
+  const chrome = useMemo(
+    () => blockingProgressChromeForScheme(scheme),
+    [scheme],
+  );
   useEffect(() => {
     if (!visible || !progressDurationMs || progressDurationMs <= 0) return;
     // Reset and run a native-driven animation. Once started, it continues even if JS is busy.
@@ -124,7 +110,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    backgroundColor: modalBackdropScrim,
     padding: 20,
   },
   card: {

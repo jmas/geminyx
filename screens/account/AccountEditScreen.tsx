@@ -1,68 +1,36 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { Ionicons } from "@expo/vector-icons";
 import type { FormikHelpers } from "formik";
 import { router } from "expo-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useLayoutEffect, useMemo } from "react";
 import {
   Alert,
   Platform,
-  Pressable,
   StyleSheet,
   Text,
   useColorScheme,
   View,
 } from "react-native";
-import { AccountForm, type AccountFormPalette, type AccountFormValues } from "components/account/AccountForm";
+import { HeaderButton } from "@react-navigation/elements";
+import { useNavigation } from "@react-navigation/native";
+import { accountFormPaletteForScheme } from "components/account/accountFormPalette";
+import { AccountForm, type AccountFormValues } from "components/account/AccountForm";
 import { useAccountActive } from "hooks/account/useAccountActive";
-import { appColors, iosAccountFormPalette, systemBlueForScheme } from "lib/theme/appColors";
+import { destructiveTintColor } from "lib/theme/appColors";
 import { queryKeys } from "lib/queryKeys";
 import { accountsRepo } from "repositories";
 import { alertError } from "utils/error";
 
-const colors = {
-  light: {
-    background: appColors.screenLight,
-    textPrimary: "#000000",
-    textSecondary: "#3c3c43",
-    separator: "rgba(60, 60, 67, 0.29)",
-    fieldBg: "rgba(120, 120, 128, 0.12)",
-    fieldBorder: "rgba(60, 60, 67, 0.18)",
-    placeholder: "rgba(60, 60, 67, 0.45)",
-    error: appColors.destructive,
-  },
-  dark: {
-    background: appColors.screenDark,
-    textPrimary: "#f2f2f7",
-    textSecondary: "rgba(235, 235, 245, 0.75)",
-    separator: "rgba(255, 255, 255, 0.12)",
-    fieldBg: "rgba(120, 120, 128, 0.24)",
-    fieldBorder: "rgba(255, 255, 255, 0.12)",
-    placeholder: "rgba(235, 235, 245, 0.45)",
-    error: "#ff6b6b",
-  },
-} as const;
+const ACCOUNT_EDIT_DELETE_ICON_SIZE = 22;
 
 export function AccountEditScreen() {
+  const navigation = useNavigation();
   const scheme = useColorScheme();
-  const palette = scheme === "dark" ? colors.dark : colors.light;
 
-  const formPalette: AccountFormPalette = useMemo(() => {
-    if (Platform.OS === "ios") {
-      return iosAccountFormPalette();
-    }
-    return {
-      background: palette.background,
-      textPrimary: palette.textPrimary,
-      textSecondary: palette.textSecondary,
-      separator: palette.separator,
-      fieldBg: palette.fieldBg,
-      fieldBorder: palette.fieldBorder,
-      fieldText: palette.textPrimary,
-      placeholder: palette.placeholder,
-      error: palette.error,
-      primaryLabel: "#ffffff",
-      primaryButtonBg: systemBlueForScheme(scheme),
-    };
-  }, [palette, scheme]);
+  const formPalette = useMemo(
+    () => accountFormPaletteForScheme(scheme),
+    [scheme],
+  );
 
   const queryClient = useQueryClient();
   const {
@@ -112,6 +80,37 @@ export function AccountEditScreen() {
     );
   }, [activeAccount, deleteMutation]);
 
+  useLayoutEffect(() => {
+    if (!activeAccount) {
+      navigation.setOptions({
+        headerRight: undefined,
+        headerRightContainerStyle: undefined,
+      });
+      return;
+    }
+    navigation.setOptions({
+      headerRightContainerStyle: { paddingRight: 8 },
+      headerRight: () => (
+        <HeaderButton
+          onPress={handleDelete}
+          disabled={deleteMutation.isPending}
+          accessibilityLabel="Delete account"
+        >
+          <Ionicons
+            name="trash-outline"
+            size={ACCOUNT_EDIT_DELETE_ICON_SIZE}
+            color={destructiveTintColor()}
+            style={
+              Platform.OS === "ios"
+                ? { lineHeight: ACCOUNT_EDIT_DELETE_ICON_SIZE }
+                : undefined
+            }
+          />
+        </HeaderButton>
+      ),
+    });
+  }, [activeAccount, deleteMutation.isPending, handleDelete, navigation]);
+
   const handleSubmit = useCallback(
     async (
       values: AccountFormValues,
@@ -138,8 +137,8 @@ export function AccountEditScreen() {
 
   if (isLoadingAccount) {
     return (
-      <View style={[styles.screen, { backgroundColor: palette.background }]}>
-        <Text style={[styles.loadingText, { color: palette.textSecondary }]}>
+      <View style={[styles.screen, { backgroundColor: formPalette.background }]}>
+        <Text style={[styles.loadingText, { color: formPalette.textSecondary }]}>
           Loading…
         </Text>
       </View>
@@ -148,8 +147,8 @@ export function AccountEditScreen() {
 
   if (isLoadError) {
     return (
-      <View style={[styles.screen, { backgroundColor: palette.background }]}>
-        <Text style={[styles.loadingText, { color: palette.error }]}>
+      <View style={[styles.screen, { backgroundColor: formPalette.background }]}>
+        <Text style={[styles.loadingText, { color: formPalette.error }]}>
           {loadError instanceof Error
             ? loadError.message
             : "Could not load account."}
@@ -160,8 +159,8 @@ export function AccountEditScreen() {
 
   if (!activeAccount || !initialValues) {
     return (
-      <View style={[styles.screen, { backgroundColor: palette.background }]}>
-        <Text style={[styles.loadingText, { color: palette.textSecondary }]}>
+      <View style={[styles.screen, { backgroundColor: formPalette.background }]}>
+        <Text style={[styles.loadingText, { color: formPalette.textSecondary }]}>
           No active account to edit.
         </Text>
       </View>
@@ -169,35 +168,10 @@ export function AccountEditScreen() {
   }
 
   return (
-    <View style={[styles.screen, { backgroundColor: palette.background }]}>
+    <View style={[styles.screen, { backgroundColor: formPalette.background }]}>
       <AccountForm
         palette={formPalette}
         initialValues={initialValues}
-        footerExtra={
-          <Pressable
-            onPress={handleDelete}
-            disabled={deleteMutation.isPending}
-            style={({ pressed }) => [
-              styles.deleteBtn,
-              {
-                borderColor: palette.error,
-                opacity: deleteMutation.isPending ? 0.6 : 1,
-              },
-              pressed && !deleteMutation.isPending
-                ? {
-                    backgroundColor:
-                      scheme === "dark"
-                        ? "rgba(255, 107, 107, 0.15)"
-                        : "rgba(255, 59, 48, 0.12)",
-                  }
-                : null,
-            ]}
-          >
-            <Text style={[styles.deleteLabel, { color: palette.error }]}>
-              Delete account
-            </Text>
-          </Pressable>
-        }
         submitLabel="Save changes"
         onSubmit={handleSubmit}
       />
@@ -215,19 +189,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     paddingHorizontal: 4,
     paddingTop: 8,
-  },
-  deleteBtn: {
-    alignSelf: "stretch",
-    minHeight: 44,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 12,
-  },
-  deleteLabel: {
-    fontSize: 17,
-    fontWeight: "600",
   },
 });
 

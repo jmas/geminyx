@@ -1,7 +1,6 @@
 import type { FormikHelpers } from "formik";
 import { useCallback, useMemo } from "react";
 import {
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -9,37 +8,14 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { accountFormPaletteForScheme } from "components/account/accountFormPalette";
 import {
   AccountForm,
-  type AccountFormPalette,
   type AccountFormValues,
 } from "components/account/AccountForm";
-import { appColors, iosAccountFormPalette, systemBlueForScheme } from "lib/theme/appColors";
+import { systemBlueForScheme } from "lib/theme/appColors";
 import { accountsRepo } from "repositories";
 import { alertError } from "utils/error";
-
-const colors = {
-  light: {
-    background: appColors.screenLight,
-    textPrimary: "#000000",
-    textSecondary: "#3c3c43",
-    separator: "rgba(60, 60, 67, 0.29)",
-    fieldBg: "rgba(120, 120, 128, 0.12)",
-    fieldBorder: "rgba(60, 60, 67, 0.18)",
-    placeholder: "rgba(60, 60, 67, 0.45)",
-    error: appColors.destructive,
-  },
-  dark: {
-    background: appColors.screenDark,
-    textPrimary: "#f2f2f7",
-    textSecondary: "rgba(235, 235, 245, 0.75)",
-    separator: "rgba(255, 255, 255, 0.12)",
-    fieldBg: "rgba(120, 120, 128, 0.24)",
-    fieldBorder: "rgba(255, 255, 255, 0.12)",
-    placeholder: "rgba(235, 235, 245, 0.45)",
-    error: "#ff6b6b",
-  },
-} as const;
 
 export type AccountCreateScreenProps = {
   /**
@@ -58,26 +34,11 @@ export function AccountCreateScreen({
 }: AccountCreateScreenProps) {
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
-  const palette = scheme === "dark" ? colors.dark : colors.light;
 
-  const formPalette: AccountFormPalette = useMemo(() => {
-    if (Platform.OS === "ios") {
-      return iosAccountFormPalette();
-    }
-    return {
-      background: palette.background,
-      textPrimary: palette.textPrimary,
-      textSecondary: palette.textSecondary,
-      separator: palette.separator,
-      fieldBg: palette.fieldBg,
-      fieldBorder: palette.fieldBorder,
-      fieldText: palette.textPrimary,
-      placeholder: palette.placeholder,
-      error: palette.error,
-      primaryLabel: "#ffffff",
-      primaryButtonBg: systemBlueForScheme(scheme),
-    };
-  }, [palette, scheme]);
+  const formPalette = useMemo(
+    () => accountFormPaletteForScheme(scheme),
+    [scheme],
+  );
 
   const handleSubmit = useCallback(
     async (
@@ -108,7 +69,7 @@ export function AccountCreateScreen({
       style={[
         styles.screen,
         {
-          backgroundColor: palette.background,
+          backgroundColor: formPalette.background,
           paddingTop: embedMode ? insets.top : 8,
         },
       ]}
@@ -133,12 +94,12 @@ export function AccountCreateScreen({
             <View style={styles.backLinkPlaceholder} />
           )}
           <Text
-            style={[styles.embedTitle, { color: palette.textPrimary }]}
+            style={[styles.embedTitle, { color: formPalette.textPrimary }]}
             accessibilityRole="header"
           >
             Create your account
           </Text>
-          <Text style={[styles.embedSubtitle, { color: palette.textSecondary }]}>
+          <Text style={[styles.embedSubtitle, { color: formPalette.textSecondary }]}>
             This profile is stored only on this device. You can add more accounts
             later in Settings.
           </Text>

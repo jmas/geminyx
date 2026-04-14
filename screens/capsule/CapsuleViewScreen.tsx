@@ -21,7 +21,6 @@ import { queryKeys } from "lib/queryKeys";
 import {
   destructiveTintColor,
   headerTitleColorForScheme,
-  navigationChromeForScheme,
   rootScreenBackgroundForScheme,
   systemBlueForScheme,
 } from "lib/theme/appColors";
@@ -72,10 +71,9 @@ export function CapsuleViewScreen() {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      ...navigationChromeForScheme(scheme),
       title: "Capsule",
     });
-  }, [navigation, scheme]);
+  }, [navigation]);
 
   const onOpenThread = useCallback(() => {
     if (!capsule) return;
@@ -187,7 +185,7 @@ export function CapsuleViewScreen() {
         style={({ pressed }) => [
           styles.primaryBtn,
           {
-            backgroundColor: scheme === "dark" ? "#5eb5f7" : "#3390ec",
+            backgroundColor: tint,
             opacity: pressed ? 0.88 : 1,
           },
         ]}
@@ -203,7 +201,7 @@ export function CapsuleViewScreen() {
         style={({ pressed }) => [
           styles.editBtn,
           {
-            borderColor: scheme === "dark" ? "rgba(94, 181, 247, 0.65)" : "rgba(51, 144, 236, 0.65)",
+            borderColor: tint,
             opacity: pressed ? 0.75 : 1,
           },
         ]}

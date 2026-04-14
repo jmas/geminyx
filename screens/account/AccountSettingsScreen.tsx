@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { AccountSwitchModal } from "components/account/AccountSwitchModal";
 import {
   Image,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,51 +16,24 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAccountActive } from "hooks/account/useAccountActive";
 import type { Account } from "lib/models/account";
 import {
-  appColors,
-  iosScreenContentPalette,
   systemBlueForScheme,
   systemGreenColor,
   systemOrangeColor,
 } from "lib/theme/appColors";
+import {
+  screenContentListPaletteForScheme,
+} from "lib/theme/semanticUi";
 import { avatarHueFromId, initialsFromName } from "utils/avatar";
 
-const colors = {
-  light: {
-    background: appColors.screenLight,
-    textPrimary: "#000000",
-    textSecondary: "#8e8e93",
-    textTertiary: "#aeaeb2",
-    profilePressed: "rgba(0, 0, 0, 0.04)",
-    cardBg: "rgba(120, 120, 128, 0.12)",
-    separator: "rgba(60, 60, 67, 0.29)",
-    rowPressed: "rgba(0, 0, 0, 0.04)",
-  },
-  dark: {
-    background: appColors.screenDark,
-    textPrimary: "#f2f2f7",
-    textSecondary: "rgba(235, 235, 245, 0.55)",
-    textTertiary: "rgba(235, 235, 245, 0.35)",
-    profilePressed: "rgba(255, 255, 255, 0.06)",
-    cardBg: "rgba(120, 120, 128, 0.24)",
-    separator: "rgba(255, 255, 255, 0.12)",
-    rowPressed: "rgba(255, 255, 255, 0.06)",
-  },
-} as const;
-
-type SettingsPalette =
-  | (typeof colors)["light"]
-  | (typeof colors)["dark"]
-  | ReturnType<typeof iosScreenContentPalette>;
+type SettingsPalette = ReturnType<typeof screenContentListPaletteForScheme>;
 
 export function AccountSettingsScreen() {
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
-  const palette: SettingsPalette =
-    Platform.OS === "ios"
-      ? iosScreenContentPalette()
-      : scheme === "dark"
-        ? colors.dark
-        : colors.light;
+  const palette = useMemo(
+    () => screenContentListPaletteForScheme(scheme),
+    [scheme],
+  );
 
   const {
     data: activeAccount,

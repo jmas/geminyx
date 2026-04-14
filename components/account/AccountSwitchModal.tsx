@@ -17,29 +17,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import type { Account } from "lib/models/account";
 import { queryKeys } from "lib/queryKeys";
-import {
-  iosAccountSwitchPalette,
-  systemBlueForScheme,
-} from "lib/theme/appColors";
+import { iosAccountSwitchPalette, systemBlueForScheme } from "lib/theme/appColors";
+import { semanticUiPaletteForScheme } from "lib/theme/semanticUi";
 import { accountsRepo } from "repositories";
 import { avatarHueFromId, initialsFromName } from "utils/avatar";
-
-const colors = {
-  light: {
-    textPrimary: "#000000",
-    textSecondary: "#8e8e93",
-    cardBg: "rgba(120, 120, 128, 0.12)",
-  },
-  dark: {
-    textPrimary: "#f2f2f7",
-    textSecondary: "rgba(235, 235, 245, 0.55)",
-    cardBg: "rgba(120, 120, 128, 0.24)",
-  },
-} as const;
-
-type SwitchPalette =
-  | (typeof colors)[keyof typeof colors]
-  | ReturnType<typeof iosAccountSwitchPalette>;
 
 export type AccountSwitchModalProps = {
   visible: boolean;
@@ -51,12 +32,17 @@ export function AccountSwitchModal({ visible, onClose }: AccountSwitchModalProps
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
   const sheet = selectCapsuleUiPalette(scheme);
-  const palette: SwitchPalette =
-    Platform.OS === "ios"
-      ? iosAccountSwitchPalette()
-      : scheme === "dark"
-        ? colors.dark
-        : colors.light;
+  const palette = useMemo(() => {
+    if (Platform.OS === "ios") {
+      return iosAccountSwitchPalette();
+    }
+    const s = semanticUiPaletteForScheme(scheme);
+    return {
+      textPrimary: s.label,
+      textSecondary: s.secondaryLabel,
+      cardBg: s.secondarySystemGroupedBackground,
+    };
+  }, [scheme]);
   const blue = systemBlueForScheme(scheme);
 
   const { data: accountsRaw = [], isFetching: loading } = useQuery({

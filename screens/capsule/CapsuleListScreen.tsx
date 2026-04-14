@@ -32,11 +32,7 @@ import { SwipeToDeleteRow } from "components/ui/SwipeToDeleteRow";
 import { useAccountActive } from "hooks/account/useAccountActive";
 import type { Capsule } from "lib/models/capsule";
 import { queryKeys } from "lib/queryKeys";
-import {
-  destructiveTintColor,
-  navigationChromeForScheme,
-  systemBlueForScheme,
-} from "lib/theme/appColors";
+import { destructiveTintColor, systemBlueForScheme } from "lib/theme/appColors";
 import { capsulesRepo, type CapsuleListSection } from "repositories";
 
 const LONG_PRESS_MS = 450;
@@ -177,7 +173,6 @@ export function CapsuleListScreen() {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      ...navigationChromeForScheme(scheme),
       title: selecting
         ? selectedIds.length > 0
           ? String(selectedIds.length)
@@ -246,7 +241,6 @@ export function CapsuleListScreen() {
     navigation,
     openAddCapsuleSheet,
     openCategoryManageModal,
-    scheme,
     selecting,
     selectedIds,
     tint,
@@ -410,6 +404,7 @@ function CapsuleRow({
       delayLongPress={LONG_PRESS_MS}
       style={({ pressed }) => [
         styles.row,
+        { backgroundColor: palette.listRowSurface },
         pressed && { backgroundColor: palette.rowPressed },
       ]}
     >

@@ -26,13 +26,8 @@ import {
 } from "lib/models/gemini";
 import { queryKeys } from "lib/queryKeys";
 import { MESSAGES_PAGE_SIZE } from "lib/resources/messages";
-import {
-  appColors,
-  headerTitleColorForScheme,
-  navigationChromeForScheme,
-  rootScreenBackgroundForScheme,
-  systemBlueForScheme,
-} from "lib/theme/appColors";
+import { headerTitleColorForScheme } from "lib/theme/appColors";
+import { threadConversationPaletteForScheme } from "lib/theme/semanticUi";
 import {
   useCallback,
   useEffect,
@@ -59,51 +54,6 @@ import { alertError, formatError } from "utils/error";
 import { firstParam } from "utils/searchParams";
 import { logThreadMessage } from "utils/threadMessageLog";
 
-const colors = {
-  light: {
-    screenBg: "#e7ebf0",
-    bubbleIncoming: "#ffffff",
-    bubbleOutgoing: "#3390ec",
-    textIncoming: "#000000",
-    textOutgoing: "#ffffff",
-    timeIncoming: "rgba(0, 0, 0, 0.45)",
-    timeOutgoing: "rgba(255, 255, 255, 0.75)",
-    composerBarBg: "#ffffff",
-    composerFieldBg: "#f0f0f0",
-    composerBorder: "rgba(0, 0, 0, 0.08)",
-    composerPlaceholder: "#8e8e93",
-    composerText: "#000000",
-    icon: "#8a8a8e",
-    iconSend: "#3390ec",
-    linkIncoming: "#1d4ed8",
-    linkOutgoing: "rgba(255, 255, 255, 0.96)",
-    viewFullBtnBg: "#ffffff",
-    viewFullBtnBorder: "rgba(60, 60, 67, 0.22)",
-    viewFullBtnLabel: "#3390ec",
-  },
-  dark: {
-    screenBg: appColors.screenDark,
-    bubbleIncoming: "#2c2c2e",
-    bubbleOutgoing: "#3390ec",
-    textIncoming: "#f2f2f7",
-    textOutgoing: "#ffffff",
-    timeIncoming: "rgba(242, 242, 247, 0.5)",
-    timeOutgoing: "rgba(255, 255, 255, 0.75)",
-    composerBarBg: "#1c1c1e",
-    composerFieldBg: "#3a3a3c",
-    composerBorder: "rgba(255, 255, 255, 0.08)",
-    composerPlaceholder: "rgba(235, 235, 245, 0.45)",
-    composerText: "#f2f2f7",
-    icon: "rgba(235, 235, 245, 0.5)",
-    iconSend: "#5eb5f7",
-    linkIncoming: "#64b5ff",
-    linkOutgoing: "rgba(255, 255, 255, 0.95)",
-    viewFullBtnBg: "#2c2c2e",
-    viewFullBtnBorder: "rgba(255, 255, 255, 0.12)",
-    viewFullBtnLabel: "#5eb5f7",
-  },
-} as const;
-
 export function ThreadViewScreen() {
   const navigation = useNavigation();
   const router = useRouter();
@@ -118,19 +68,10 @@ export function ThreadViewScreen() {
   const nameParam = firstParam(params.name);
   const urlParam = firstParam(params.url);
   const scheme = useColorScheme();
-  const basePalette = scheme === "dark" ? colors.dark : colors.light;
-  const palette = useMemo(() => {
-    if (Platform.OS !== "ios") return basePalette;
-    const tint = systemBlueForScheme(scheme);
-    return {
-      ...basePalette,
-      screenBg: rootScreenBackgroundForScheme(scheme),
-      bubbleOutgoing: tint,
-      iconSend: tint,
-      viewFullBtnLabel: tint,
-      linkIncoming: tint,
-    };
-  }, [scheme, basePalette]);
+  const palette = useMemo(
+    () => threadConversationPaletteForScheme(scheme),
+    [scheme],
+  );
 
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [loadingInitial, setLoadingInitial] = useState(false);
@@ -506,7 +447,6 @@ export function ThreadViewScreen() {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      ...navigationChromeForScheme(scheme),
       headerTitle: () => (
         <Pressable
           onPress={openCapsuleDetail}
@@ -547,7 +487,6 @@ export function ThreadViewScreen() {
     headerTitleColor,
     navigation,
     openCapsuleDetail,
-    scheme,
   ]);
 
   const lastMessage =

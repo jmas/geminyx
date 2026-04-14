@@ -16,41 +16,17 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAccountActive } from "hooks/account/useAccountActive";
 import { queryKeys } from "lib/queryKeys";
-import { appColors } from "lib/theme/appColors";
+import { certificateScreenPaletteForScheme } from "lib/theme/semanticUi";
 import { accountsRepo } from "repositories";
 import { alertError } from "utils/error";
-
-const colors = {
-  light: {
-    background: appColors.screenLight,
-    textPrimary: "#000000",
-    textSecondary: "#8e8e93",
-    textTertiary: "#aeaeb2",
-    separator: "rgba(60, 60, 67, 0.29)",
-    fieldBg: "rgba(120, 120, 128, 0.12)",
-    fieldBorder: "rgba(60, 60, 67, 0.18)",
-    danger: "#c62828",
-    dangerPressed: "rgba(198, 40, 40, 0.12)",
-    rowPressed: "rgba(0, 0, 0, 0.04)",
-  },
-  dark: {
-    background: appColors.screenDark,
-    textPrimary: "#f2f2f7",
-    textSecondary: "rgba(235, 235, 245, 0.55)",
-    textTertiary: "rgba(235, 235, 245, 0.35)",
-    separator: "rgba(255, 255, 255, 0.12)",
-    fieldBg: "rgba(120, 120, 128, 0.24)",
-    fieldBorder: "rgba(255, 255, 255, 0.12)",
-    danger: "#ff6b6b",
-    dangerPressed: "rgba(255, 107, 107, 0.15)",
-    rowPressed: "rgba(255, 255, 255, 0.06)",
-  },
-} as const;
 
 export function AccountCertificateScreen() {
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
-  const palette = scheme === "dark" ? colors.dark : colors.light;
+  const palette = useMemo(
+    () => certificateScreenPaletteForScheme(scheme),
+    [scheme],
+  );
 
   const queryClient = useQueryClient();
   const {

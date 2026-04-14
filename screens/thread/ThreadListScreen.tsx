@@ -5,13 +5,13 @@ import { router, type Href } from "expo-router";
 import {
   useCallback,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
 import {
   Alert,
   FlatList,
-  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -25,48 +25,22 @@ import { SwipeToDeleteRow } from "components/ui/SwipeToDeleteRow";
 import { useAccountActive } from "hooks/account/useAccountActive";
 import type { Thread } from "lib/models/thread";
 import { queryKeys } from "lib/queryKeys";
-import {
-  appColors,
-  destructiveTintColor,
-  iosThreadListPalette,
-  navigationChromeForScheme,
-  systemBlueForScheme,
-} from "lib/theme/appColors";
+import { destructiveTintColor, systemBlueForScheme } from "lib/theme/appColors";
+import { threadListPaletteForScheme } from "lib/theme/semanticUi";
 import { threadsRepo } from "repositories";
 import { formatLastMessageDate } from "utils/formatLastMessageDate";
 
 const LONG_PRESS_MS = 450;
 
-const colors = {
-  light: {
-    background: appColors.screenLight,
-    textPrimary: "#000000",
-    textSecondary: "#8e8e93",
-    separator: "rgba(60, 60, 67, 0.29)",
-    rowPressed: "rgba(0, 0, 0, 0.04)",
-  },
-  dark: {
-    background: appColors.screenDark,
-    textPrimary: "#f2f2f7",
-    textSecondary: "rgba(235, 235, 245, 0.55)",
-    separator: "rgba(84, 84, 88, 0.55)",
-    rowPressed: "rgba(255, 255, 255, 0.06)",
-  },
-} as const;
-
-type ListPalette =
-  | (typeof colors)[keyof typeof colors]
-  | ReturnType<typeof iosThreadListPalette>;
+type ListPalette = ReturnType<typeof threadListPaletteForScheme>;
 
 export function ThreadListScreen() {
   const navigation = useNavigation();
   const scheme = useColorScheme();
-  const palette: ListPalette =
-    Platform.OS === "ios"
-      ? iosThreadListPalette()
-      : scheme === "dark"
-        ? colors.dark
-        : colors.light;
+  const palette = useMemo(
+    () => threadListPaletteForScheme(scheme),
+    [scheme],
+  );
   const tint = systemBlueForScheme(scheme);
   const openSwipeRef = useRef<SwipeableMethods | null>(null);
 
@@ -164,7 +138,6 @@ export function ThreadListScreen() {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      ...navigationChromeForScheme(scheme),
       title: selecting
         ? selectedIds.length > 0
           ? String(selectedIds.length)
@@ -215,7 +188,6 @@ export function ThreadListScreen() {
     threads,
     exitSelectMode,
     navigation,
-    scheme,
     selecting,
     selectedIds,
     tint,
@@ -354,6 +326,7 @@ function ThreadRow({
       delayLongPress={LONG_PRESS_MS}
       style={({ pressed }) => [
         styles.row,
+        { backgroundColor: palette.listRowSurface },
         pressed && { backgroundColor: palette.rowPressed },
       ]}
     >

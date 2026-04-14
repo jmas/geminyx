@@ -1,37 +1,43 @@
 import type { Theme } from "rn-emoji-keyboard/lib/typescript/contexts/KeyboardContext";
-import { capsuleUiPalette } from "components/capsule/capsuleUiPalette";
+import {
+  androidDarkSurfaces,
+  modalBackdropScrim,
+  semanticUiAndroidDark,
+  semanticUiAndroidLight,
+} from "lib/theme/semanticUi";
 
-/** Theme for `rn-emoji-keyboard` aligned with capsule form light/dark tokens (string colors only). */
+/** Theme for `rn-emoji-keyboard` (string colors only — matches semantic Android fallbacks). */
 export function rnEmojiKeyboardTheme(
   scheme: "light" | "dark" | null | undefined,
 ): Theme {
-  const base = scheme === "dark" ? capsuleUiPalette.dark : capsuleUiPalette.light;
+  const dark = scheme === "dark";
+  const base = dark ? semanticUiAndroidDark : semanticUiAndroidLight;
   return {
-    backdrop: "rgba(0,0,0,0.45)",
-    knob: scheme === "dark" ? "#3a3a3c" : "#e5e5ea",
-    container: base.fieldBg,
-    header: base.textSecondary,
-    skinTonesContainer: scheme === "dark" ? "#2c2c2e" : "#e3dbcd",
+    backdrop: modalBackdropScrim,
+    knob: dark ? semanticUiAndroidDark.systemGray5 : "#e5e5ea",
+    container: base.secondarySystemGroupedBackground,
+    header: base.secondaryLabel,
+    skinTonesContainer: dark ? androidDarkSurfaces.tertiaryGrouped : "#e3dbcd",
     category: {
-      icon: base.fieldText,
-      iconActive: base.addLabel,
-      container: base.background,
-      containerActive: base.fieldBg,
+      icon: base.label,
+      iconActive: base.systemBlue,
+      container: base.systemBackground,
+      containerActive: base.secondarySystemGroupedBackground,
     },
     search: {
-      background: scheme === "dark" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
-      text: base.fieldText,
-      placeholder: base.placeholder,
-      icon: base.textSecondary,
+      background: dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
+      text: base.label,
+      placeholder: base.placeholderText,
+      icon: base.secondaryLabel,
     },
     customButton: {
-      icon: base.fieldText,
-      iconPressed: base.addLabel,
-      background: scheme === "dark" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
-      backgroundPressed: scheme === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)",
+      icon: base.label,
+      iconPressed: base.systemBlue,
+      background: dark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)",
+      backgroundPressed: dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.1)",
     },
     emoji: {
-      selected: scheme === "dark" ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)",
+      selected: dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.08)",
     },
   };
 }

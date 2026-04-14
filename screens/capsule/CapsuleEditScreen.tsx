@@ -22,7 +22,6 @@ import { useAccountActive } from "hooks/account/useAccountActive";
 import { queryKeys } from "lib/queryKeys";
 import {
   headerTitleColorForScheme,
-  navigationChromeForScheme,
   rootScreenBackgroundForScheme,
   systemBlueForScheme,
 } from "lib/theme/appColors";
@@ -94,8 +93,6 @@ export function CapsuleEditScreen() {
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      ...navigationChromeForScheme(scheme),
-      title: "Edit Capsule",
       headerLeft: () => (
         <Pressable
           onPress={() => router.back()}
@@ -107,7 +104,7 @@ export function CapsuleEditScreen() {
         </Pressable>
       ),
     });
-  }, [navigation, router, scheme, tint]);
+  }, [navigation, router, tint]);
 
   const initialValues: CapsuleFormValues = useMemo(
     () => ({
