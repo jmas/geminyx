@@ -1,4 +1,4 @@
-import { CapsuleEditScreen } from "../../../screens/capsule/CapsuleEditScreen";
+import { CapsuleEditScreen } from "screens/capsule/CapsuleEditScreen";
 
 export default CapsuleEditScreen;
 

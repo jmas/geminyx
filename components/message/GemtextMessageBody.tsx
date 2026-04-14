@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -10,6 +11,9 @@ import {
 import { resolveGeminiLinkHref } from "lib/models/gemini";
 import { parseGemtext, type GemtextSegment } from "utils/parseGemtext";
 import { parseAnsiSgrToRuns } from "utils/parseAnsiSgr";
+import { CodeBlockContextMenu } from "components/message/CodeBlockContextMenu";
+import ViewShot from "react-native-view-shot";
+import * as Clipboard from "expo-clipboard";
 
 const mono = Platform.select({
   ios: "JetBrainsMono_400Regular",
@@ -207,7 +211,7 @@ export function GemtextMessageBody({
 
   const rowLayout = useMemo(() => {
     const grouped = groupGemtextRows(segments);
-    const out: Array<{ row: GemtextRow; marginTop: number }> = [];
+    const out: { row: GemtextRow; marginTop: number }[] = [];
     let prevSeg: GemtextSegment | undefined;
     for (let ri = 0; ri < grouped.length; ri++) {
       const row = grouped[ri];
@@ -428,25 +432,136 @@ function BlockSegment({
         </Text>
       );
     case "pre": {
-      const lines = segment.text.split("\n");
-      const terminal = codeBlockTheme === "terminal";
-      const preTextColor = terminal
-        ? "rgba(255, 255, 255, 0.92)"
-        : textColor;
       return (
-        <View
-          style={[
-            styles.preWrap,
-            styles.segmentWidth,
-            terminal
-              ? styles.preWrapTerminal
-              : isOutgoing
-                ? styles.preWrapOutgoing
-                : incomingChrome === "dark"
-                  ? styles.preWrapIncomingDark
-                  : styles.preWrapIncoming,
-          ]}
-        >
+        <PreBlock
+          text={segment.text}
+          textColor={textColor}
+          isOutgoing={isOutgoing}
+          incomingChrome={incomingChrome}
+          codeBlockTheme={codeBlockTheme}
+        />
+      );
+    }
+    default:
+      return null;
+  }
+}
+
+function PreBlock({
+  text,
+  textColor,
+  isOutgoing,
+  incomingChrome,
+  codeBlockTheme,
+}: {
+  text: string;
+  textColor: string;
+  isOutgoing: boolean;
+  incomingChrome: IncomingGemtextChrome;
+  codeBlockTheme: CodeBlockTheme;
+}) {
+  const exportShotRef = useRef<ViewShot | null>(null);
+  const captureViewRef = useRef<View | null>(null);
+  const lines = useMemo(() => text.split("\n"), [text]);
+  const terminal = codeBlockTheme === "terminal";
+  const preTextColor = terminal ? "rgba(255, 255, 255, 0.92)" : textColor;
+  const [captureHeight, setCaptureHeight] = useState(0);
+  const [widestLineWidth, setWidestLineWidth] = useState(0);
+  const capturePaddingX = 12 * 2;
+  const captureBorderX =
+    terminal ? Math.ceil(StyleSheet.hairlineWidth) * 2 : 0;
+  const captureFudgeX = 2; // avoid last-glyph clipping due to rounding/rendering
+  const captureWidth = useMemo(
+    () =>
+      Math.max(
+        1,
+        Math.ceil(
+          widestLineWidth + capturePaddingX + captureBorderX + captureFudgeX,
+        ),
+      ),
+    [captureBorderX, capturePaddingX, widestLineWidth],
+  );
+
+  // Re-measure whenever the rendered styling/content changes.
+  useEffect(() => {
+    setWidestLineWidth(0);
+    setCaptureHeight(0);
+  }, [text, terminal, incomingChrome, isOutgoing]);
+
+  const preContainerStyle = [
+    styles.preWrap,
+    styles.segmentWidth,
+    terminal
+      ? styles.preWrapTerminal
+      : isOutgoing
+        ? styles.preWrapOutgoing
+        : incomingChrome === "dark"
+          ? styles.preWrapIncomingDark
+          : styles.preWrapIncoming,
+  ];
+
+  const preCaptureContainerStyle = [
+    styles.preWrap,
+    terminal
+      ? styles.preWrapTerminal
+      : isOutgoing
+        ? styles.preWrapOutgoing
+        : incomingChrome === "dark"
+          ? styles.preWrapIncomingDark
+          : styles.preWrapIncoming,
+    styles.preCaptureIntrinsicWidth,
+  ];
+
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportPendingRef = useRef<{
+    resolve: () => void;
+    reject: (e: unknown) => void;
+  } | null>(null);
+
+  const runExportCopy = useCallback(async () => {
+    if (exportPendingRef.current) return;
+    await new Promise<void>((resolve, reject) => {
+      exportPendingRef.current = { resolve, reject };
+      setExportOpen(true);
+    });
+  }, []);
+
+  const doExportCapture = useCallback(async () => {
+    const pending = exportPendingRef.current;
+    if (!pending) return;
+    try {
+      const w = captureWidth;
+      const h = Math.ceil(captureHeight);
+      if (w <= 0 || h <= 0) throw new Error("Image is still rendering.");
+      if (!exportShotRef.current) throw new Error("Capture view not ready.");
+      const base64 = await exportShotRef.current.capture?.();
+      if (!base64 || base64.length < 64)
+        throw new Error("Image capture returned empty data.");
+      await Clipboard.setImageAsync(base64);
+      pending.resolve();
+    } catch (e) {
+      pending.reject(e);
+    } finally {
+      exportPendingRef.current = null;
+      setExportOpen(false);
+    }
+  }, [captureHeight, captureWidth]);
+
+  return (
+    <CodeBlockContextMenu
+      title="Code block"
+      text={text}
+      onCopyImage={runExportCopy}
+      captureTargetRef={captureViewRef}
+      captureOptions={{
+        useRenderInContext: Platform.OS === "ios" ? true : undefined,
+        width: captureWidth,
+        height: Math.ceil(captureHeight),
+      }}
+    >
+      <View style={styles.preBlockWrap}>
+        {/* On-screen: horizontal scroll for long lines */}
+        <View style={preContainerStyle}>
           <ScrollView
             horizontal
             nestedScrollEnabled
@@ -476,14 +591,104 @@ function BlockSegment({
             </View>
           </ScrollView>
         </View>
-      );
-    }
-    default:
-      return null;
-  }
+
+        <Modal
+          visible={exportOpen}
+          transparent
+          animationType="none"
+          onShow={() => {
+            // Next frame to ensure text rasterizes.
+            requestAnimationFrame(() => {
+              void doExportCapture();
+            });
+          }}
+        >
+          <View style={styles.exportModalRoot} pointerEvents="none">
+            <ViewShot
+              ref={exportShotRef}
+              options={{
+                format: "png",
+                quality: 1,
+                result: "base64",
+                width: captureWidth,
+                height: Math.ceil(captureHeight),
+              }}
+            >
+              <View style={preCaptureContainerStyle}>
+                <View style={styles.preTextColumn}>
+                  {lines.map((line, li) => (
+                    <Text
+                      key={`exp-${li}`}
+                      numberOfLines={1}
+                      {...(Platform.OS === "android"
+                        ? { textBreakStrategy: "simple" as const }
+                        : {})}
+                      style={[styles.preText, { color: preTextColor }]}
+                    >
+                      {parseAnsiSgrToRuns(line, preTextColor).map((run, ri) => (
+                        <Text key={ri} style={run.style}>
+                          {run.text}
+                        </Text>
+                      ))}
+                    </Text>
+                  ))}
+                </View>
+              </View>
+            </ViewShot>
+          </View>
+        </Modal>
+
+        {/* Hidden capture: plain View so view-shot can capture full bounds on Fabric. */}
+        <View
+          ref={captureViewRef}
+          style={[styles.preCaptureHidden, preCaptureContainerStyle]}
+          pointerEvents="none"
+          collapsable={false}
+          onLayout={(e) => {
+            const { height: h } = e.nativeEvent.layout;
+            setCaptureHeight((prev) => (prev === h ? prev : h));
+          }}
+        >
+          <View style={styles.preTextColumn}>
+            {lines.map((line, li) => (
+              <Text
+                key={`cap-${li}`}
+                numberOfLines={1}
+                {...(Platform.OS === "android"
+                  ? { textBreakStrategy: "simple" as const }
+                  : {})}
+                style={[styles.preText, { color: preTextColor }]}
+                onLayout={(e) => {
+                  // Capture width is often constrained by parent layout; measure each line instead.
+                  const { width } = e.nativeEvent.layout;
+                  setWidestLineWidth((prev) => (width > prev ? width : prev));
+                }}
+              >
+                {parseAnsiSgrToRuns(line, preTextColor).map((run, ri) => (
+                  <Text key={ri} style={run.style}>
+                    {run.text}
+                  </Text>
+                ))}
+              </Text>
+            ))}
+          </View>
+        </View>
+      </View>
+    </CodeBlockContextMenu>
+  );
 }
 
 const styles = StyleSheet.create({
+  preBlockWrap: {
+    position: "relative",
+    overflow: "visible",
+  },
+  exportModalRoot: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    opacity: 0.001,
+  },
   root: {
     alignSelf: "stretch",
     alignItems: "stretch",
@@ -548,9 +753,9 @@ const styles = StyleSheet.create({
   },
   preWrap: {
     borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingTop: 10,
-    paddingBottom: 10,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
     marginBottom: PRE_MARGIN_BOTTOM,
   },
   preWrapIncoming: {
@@ -584,6 +789,15 @@ const styles = StyleSheet.create({
   preTextColumn: {
     alignSelf: "flex-start",
     flexShrink: 0,
+  },
+  preCaptureIntrinsicWidth: {
+    alignSelf: "flex-start",
+    flexShrink: 0,
+  },
+  preCaptureHidden: {
+    position: "absolute",
+    left: -12000,
+    top: 0,
   },
   preText: {
     fontFamily: mono,

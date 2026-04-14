@@ -5,7 +5,7 @@ import type {
   GetListParams,
 } from "@refinedev/core";
 import type { DialogMessage } from "lib/models/dialogMessage";
-import { messagesRepo } from "repositories";
+import { accountsRepo, dialogsRepo, messagesRepo } from "repositories";
 import type { SqliteResourceAdapter } from "lib/sqlite/resourceAdapterTypes";
 import { logDialogMessage } from "utils/dialogMessageLog";
 
@@ -40,6 +40,23 @@ function eqFilterValue(
     }
   }
   return undefined;
+}
+
+async function requireActiveAccountId(): Promise<string> {
+  const active = await accountsRepo.getActive();
+  if (!active?.id) {
+    throw { message: "No active account", statusCode: 400 };
+  }
+  return active.id;
+}
+
+async function assertDialogBelongsToActiveAccount(dialogId: string): Promise<void> {
+  const accountId = await requireActiveAccountId();
+  const d = await dialogsRepo.getByIdForAccount(accountId, dialogId);
+  if (!d) {
+    // Treat this as "not found" rather than leaking that the dialog exists elsewhere.
+    throw { message: "Dialog not found", statusCode: 404 };
+  }
 }
 
 export type MessageCreateVariables = {
@@ -77,6 +94,7 @@ export const sqliteAdapter: SqliteResourceAdapter = {
     if (!dialogId) {
       return { data: [], total: 0 };
     }
+    await assertDialogBelongsToActiveAccount(dialogId);
     const paging = (
       meta as { messagesPaging?: MessagesPagingMeta } | undefined
     )?.messagesPaging;
@@ -109,6 +127,7 @@ export const sqliteAdapter: SqliteResourceAdapter = {
     variables,
   }: CreateParams<TVariables>) {
     const v = variables as MessageCreateVariables;
+    await assertDialogBelongsToActiveAccount(v.dialog_id);
     logDialogMessage("sqlite.message.create.begin", {
       dialogId: v.dialog_id,
       id: v.id,

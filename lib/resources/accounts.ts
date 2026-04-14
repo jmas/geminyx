@@ -1,6 +1,8 @@
 import type {
   BaseRecord,
   CrudFilter,
+  DeleteOneParams,
+  DeleteOneResponse,
   GetListParams,
   GetOneParams,
   UpdateParams,
@@ -72,5 +74,14 @@ export const sqliteAdapter: SqliteResourceAdapter = {
       throw { message: "Account not found", statusCode: 404 };
     }
     return { data: row as unknown as TData };
+  },
+  async deleteOne<TData extends BaseRecord, TVariables = unknown>({
+    id,
+  }: DeleteOneParams<TVariables>): Promise<DeleteOneResponse<TData>> {
+    const deleted = await accountsRepo.deleteById(String(id));
+    if (!deleted) {
+      throw { message: "Account not found", statusCode: 404 };
+    }
+    return { data: deleted as unknown as TData };
   },
 };

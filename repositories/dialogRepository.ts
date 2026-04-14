@@ -26,7 +26,7 @@ export class DialogRepository extends BaseSqliteRepository {
     };
   }
 
-  async list(): Promise<Dialog[]> {
+  async listForAccount(accountId: string): Promise<Dialog[]> {
     const db = await this.db();
     const rows = await db.getAllAsync<{
       dialog_id: string;
@@ -49,12 +49,17 @@ export class DialogRepository extends BaseSqliteRepository {
          c.description
        FROM dialogs d
        INNER JOIN capsules c ON c.id = d.capsule_id
+       WHERE c.account_id = ?
        ORDER BY datetime(d.last_message_at) DESC`,
+      accountId,
     );
     return rows.map((r) => this.rowToDialog(r));
   }
 
-  async getById(dialogId: string): Promise<Dialog | null> {
+  async getByIdForAccount(
+    accountId: string,
+    dialogId: string,
+  ): Promise<Dialog | null> {
     const db = await this.db();
     const row = await db.getFirstAsync<{
       dialog_id: string;
@@ -77,7 +82,8 @@ export class DialogRepository extends BaseSqliteRepository {
          c.description
        FROM dialogs d
        INNER JOIN capsules c ON c.id = d.capsule_id
-       WHERE d.id = ?`,
+       WHERE c.account_id = ? AND d.id = ?`,
+      accountId,
       dialogId,
     );
     return row ? this.rowToDialog(row) : null;

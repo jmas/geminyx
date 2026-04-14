@@ -75,12 +75,16 @@ export type AccountFormPalette = {
 
 export type AccountFormProps = {
   palette: AccountFormPalette;
+  initialValues?: AccountFormValues;
   /** Optional helper text shown while submitting (e.g. generating cert). */
   submittingHint?: string;
   /** Disable inputs + button (e.g. parent doing critical work). */
   disabled?: boolean;
+  /** Optional extra actions shown above the primary submit button. */
+  footerExtra?: ReactNode;
   /** Use `useHeaderHeight()` when the form sits under a navigation header. */
   keyboardVerticalOffset?: number;
+  submitLabel?: string;
   onSubmit: (
     values: AccountFormValues,
     helpers: FormikHelpers<AccountFormValues>,
@@ -89,8 +93,11 @@ export type AccountFormProps = {
 
 export function AccountForm({
   palette,
+  initialValues,
   submittingHint,
   disabled = false,
+  footerExtra,
+  submitLabel = "Create an account",
   onSubmit,
 }: AccountFormProps) {
   const insets = useSafeAreaInsets();
@@ -100,7 +107,8 @@ export function AccountForm({
 
   return (
     <Formik<AccountFormValues>
-      initialValues={accountFormEmptyValues}
+      initialValues={initialValues ?? accountFormEmptyValues}
+      enableReinitialize
       validationSchema={accountFormValidationSchema}
       onSubmit={onSubmit}
     >
@@ -257,6 +265,11 @@ export function AccountForm({
                   {submittingHint}
                 </Text>
               ) : null}
+              {footerExtra ? (
+                <View style={styles.footerExtra}>
+                  {footerExtra}
+                </View>
+              ) : null}
               <Pressable
                 onPress={() => handleSubmit()}
                 disabled={isBusy}
@@ -278,7 +291,7 @@ export function AccountForm({
                       { color: palette.primaryLabel },
                     ]}
                   >
-                    Create an account
+                    {submitLabel}
                   </Text>
                 )}
               </Pressable>
@@ -338,6 +351,10 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   footer: {},
+  footerExtra: {
+    marginBottom: 10,
+    gap: 10,
+  },
   submittingHint: {
     fontSize: 13,
     lineHeight: 18,

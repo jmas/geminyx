@@ -3,7 +3,6 @@ import {
   openDatabaseAsync,
   type SQLiteDatabase,
 } from "expo-sqlite";
-import { SEED_CAPSULES } from "lib/resources/seedCapsules";
 import { runMigrations } from "lib/sqlite/migrations";
 
 /** File name in Expo’s default SQLite directory (app sandbox). */
@@ -13,7 +12,7 @@ let dbPromise: Promise<SQLiteDatabase> | null = null;
 
 /**
  * Closes the open connection (if any), deletes the DB file, and clears the
- * singleton so the next `getDatabase()` creates a new file and runs migrations + seed.
+ * singleton so the next `getDatabase()` creates a new file and runs migrations.
  * On a real “fresh install”, deleting the app also wipes this file.
  */
 export async function resetLocalDatabase(): Promise<void> {
@@ -30,40 +29,10 @@ export async function resetLocalDatabase(): Promise<void> {
   await deleteDatabaseAsync(DATABASE_NAME);
 }
 
-async function seedIfEmpty(db: SQLiteDatabase): Promise<void> {
-  const countRow = await db.getFirstAsync<{ n: number }>(
-    "SELECT COUNT(*) AS n FROM capsules",
-  );
-  if ((countRow?.n ?? 0) > 0) return;
-
-  await db.withTransactionAsync(async () => {
-    const emptyDialogAt = new Date(0).toISOString();
-    for (const c of SEED_CAPSULES) {
-      await db.runAsync(
-        `INSERT INTO capsules (id, name, avatar_url, url, description)
-         VALUES (?, ?, ?, ?, ?)`,
-        c.id,
-        c.name,
-        c.avatarUrl ?? null,
-        c.url ?? null,
-        c.description?.trim() ? c.description.trim() : null,
-      );
-      await db.runAsync(
-        `INSERT INTO dialogs (id, capsule_id, message_id, last_message_at)
-         VALUES (?, ?, NULL, ?)`,
-        c.id,
-        c.id,
-        emptyDialogAt,
-      );
-    }
-  });
-}
-
 async function openAndPrepare(): Promise<SQLiteDatabase> {
   const db = await openDatabaseAsync(DATABASE_NAME);
   await db.execAsync("PRAGMA foreign_keys = ON;");
   await runMigrations(db);
-  await seedIfEmpty(db);
   return db;
 }
 
@@ -75,7 +44,17 @@ export function getDatabase(): Promise<SQLiteDatabase> {
   return dbPromise;
 }
 
-/** Open DB, run migrations, seed demo rows once. Call once at startup. */
+/**
+ * Open DB and ensure the active account has default starter capsules when it has none
+ * (e.g. after deleting all capsules). New accounts also get these in `AccountRepository.insert`.
+ */
 export async function initializeDatabase(): Promise<void> {
-  await getDatabase();
+  const db = await getDatabase();
+  const { capsulesRepo } = await import("repositories/capsuleRepository");
+  const row = await db.getFirstAsync<{ id: string }>(
+    "SELECT id FROM accounts WHERE is_active = 1 LIMIT 1",
+  );
+  if (row?.id) {
+    await capsulesRepo.seedDefaultCapsulesIfEmpty(row.id);
+  }
 }

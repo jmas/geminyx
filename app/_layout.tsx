@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
 import { PopupProvider } from "react-popup-manager";
+import { AccountCreateScreen } from "screens/account/AccountCreateScreen";
 import { OnboardingScreen } from "screens/onboarding/OnboardingScreen";
 
 void SplashScreen.preventAutoHideAsync();
@@ -23,6 +24,9 @@ type AppGate = "boot" | "onboarding" | "app";
 export default function RootLayout() {
   const [gate, setGate] = useState<AppGate>("boot");
   const [bootDone, setBootDone] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState<"slides" | "create">(
+    "slides",
+  );
   const [fontsLoaded] = useFonts({
     JetBrainsMono_400Regular,
   });
@@ -63,6 +67,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     return registerLocalDatabaseEraseHandler(() => {
+      setOnboardingStep("slides");
       setGate("onboarding");
     });
   }, []);
@@ -74,7 +79,17 @@ export default function RootLayout() {
   if (gate === "onboarding") {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <OnboardingScreen onAccountCreated={enterApp} />
+        {onboardingStep === "slides" ? (
+          <OnboardingScreen
+            onFinishIntro={() => setOnboardingStep("create")}
+          />
+        ) : (
+          <AccountCreateScreen
+            embedMode
+            onBackToIntro={() => setOnboardingStep("slides")}
+            onSuccess={enterApp}
+          />
+        )}
         <StatusBar style="auto" />
       </GestureHandlerRootView>
     );
@@ -136,6 +151,34 @@ export default function RootLayout() {
             <Stack.Screen
               name="capsule/[id]"
               options={{
+                headerBackTitle: "Back",
+              }}
+            />
+            <Stack.Screen
+              name="account/edit"
+              options={{
+                title: "Edit profile",
+                headerBackTitle: "Back",
+              }}
+            />
+            <Stack.Screen
+              name="account/create"
+              options={{
+                title: "New account",
+                headerBackTitle: "Back",
+              }}
+            />
+            <Stack.Screen
+              name="account/certificate"
+              options={{
+                title: "Certificate",
+                headerBackTitle: "Back",
+              }}
+            />
+            <Stack.Screen
+              name="account/developer"
+              options={{
+                title: "Developer",
                 headerBackTitle: "Back",
               }}
             />

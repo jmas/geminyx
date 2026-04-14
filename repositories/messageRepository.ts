@@ -53,7 +53,7 @@ export class MessageRepository extends BaseSqliteRepository {
       request_path: string | null;
     }>(
       `SELECT id, content_length, body, blob_id, status, meta, sent_at, is_outgoing, request_path FROM messages
-       WHERE dialog_id = ? ORDER BY datetime(sent_at) ASC, id ASC`,
+       WHERE dialog_id = ? ORDER BY sent_at ASC, id ASC`,
       dialogId,
     );
     return rows.map((r) => this.rowToMessage(r));
@@ -80,9 +80,9 @@ export class MessageRepository extends BaseSqliteRepository {
          SELECT id, content_length, body, blob_id, status, meta, sent_at, is_outgoing, request_path
          FROM messages
          WHERE dialog_id = ?
-         ORDER BY datetime(sent_at) DESC, id DESC
+         ORDER BY sent_at DESC, id DESC
          LIMIT ?
-       ) ORDER BY datetime(sent_at) ASC, id ASC`,
+       ) ORDER BY sent_at ASC, id ASC`,
       dialogId,
       limit,
     );
@@ -109,10 +109,10 @@ export class MessageRepository extends BaseSqliteRepository {
       `SELECT id, content_length, body, blob_id, status, meta, sent_at, is_outgoing, request_path FROM messages
        WHERE dialog_id = ?
          AND (
-           datetime(sent_at) < datetime(?)
+           sent_at < ?
            OR (sent_at = ? AND id < ?)
          )
-       ORDER BY datetime(sent_at) DESC, id DESC
+       ORDER BY sent_at DESC, id DESC
        LIMIT ?`,
       dialogId,
       cursor.sentAt,

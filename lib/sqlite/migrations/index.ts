@@ -12,6 +12,7 @@ import { migrationV009 } from "./v009_message_request_path";
 import { migrationV010 } from "./v010_kennedy_only_seed";
 import { migrationV011 } from "./v011_account_gemini_client_cert";
 import { migrationV012 } from "./v012_dialog_client_cert_share_flag";
+import { migrationV013 } from "./v013_capsules_account_scope";
 
 const MIGRATIONS: SqliteMigration[] = [
   migrationV001,
@@ -26,6 +27,7 @@ const MIGRATIONS: SqliteMigration[] = [
   migrationV010,
   migrationV011,
   migrationV012,
+  migrationV013,
 ];
 
 /** Ordered ascending by `version` */

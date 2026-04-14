@@ -9,7 +9,7 @@ import type {
   UpdateResponse,
 } from "@refinedev/core";
 import { normalizeGeminiCapsuleRootUrl } from "lib/models/gemini";
-import { capsulesRepo, type CapsulePatch } from "repositories";
+import { accountsRepo, capsulesRepo, type CapsulePatch } from "repositories";
 import type { SqliteResourceAdapter } from "lib/sqlite/resourceAdapterTypes";
 
 export const RESOURCE = "capsules" as const;
@@ -25,16 +25,26 @@ export type CapsuleCreateVariables = {
 
 export type CapsuleUpdateVariables = CapsulePatch;
 
+async function requireActiveAccountId(): Promise<string> {
+  const active = await accountsRepo.getActive();
+  if (!active?.id) {
+    throw { message: "No active account", statusCode: 400 };
+  }
+  return active.id;
+}
+
 export const sqliteAdapter: SqliteResourceAdapter = {
   async getList<TData extends BaseRecord>(_params: GetListParams) {
-    const rows = await capsulesRepo.list();
+    const accountId = await requireActiveAccountId();
+    const rows = await capsulesRepo.listForAccount(accountId);
     return {
       data: rows as unknown as TData[],
       total: rows.length,
     };
   },
   async getOne<TData extends BaseRecord>({ id }: GetOneParams) {
-    const row = await capsulesRepo.getById(String(id));
+    const accountId = await requireActiveAccountId();
+    const row = await capsulesRepo.getByIdForAccount(accountId, String(id));
     if (!row) {
       throw { message: "Capsule not found", statusCode: 404 };
     }
@@ -43,6 +53,7 @@ export const sqliteAdapter: SqliteResourceAdapter = {
   async create<TData extends BaseRecord, TVariables = unknown>({
     variables,
   }: CreateParams<TVariables>) {
+    const accountId = await requireActiveAccountId();
     const v = variables as CapsuleCreateVariables;
     const rawUrl = v.url?.trim();
     const capsule = await capsulesRepo.insertWithDialog({
@@ -50,6 +61,7 @@ export const sqliteAdapter: SqliteResourceAdapter = {
       avatarUrl: v.avatarUrl,
       url: rawUrl ? normalizeGeminiCapsuleRootUrl(rawUrl) : undefined,
       description: v.description,
+      accountId,
     });
     return { data: capsule as unknown as TData };
   },
@@ -57,13 +69,18 @@ export const sqliteAdapter: SqliteResourceAdapter = {
     id,
     variables,
   }: UpdateParams<TVariables>): Promise<UpdateResponse<TData>> {
+    const accountId = await requireActiveAccountId();
+    const existing = await capsulesRepo.getByIdForAccount(accountId, String(id));
+    if (!existing) {
+      throw { message: "Capsule not found", statusCode: 404 };
+    }
     const v = variables as CapsuleUpdateVariables;
     const rawUrl = v.url?.trim();
     await capsulesRepo.patch(String(id), {
       ...v,
       url: rawUrl ? normalizeGeminiCapsuleRootUrl(rawUrl) : "",
     });
-    const row = await capsulesRepo.getById(String(id));
+    const row = await capsulesRepo.getByIdForAccount(accountId, String(id));
     if (!row) {
       throw { message: "Capsule not found", statusCode: 404 };
     }
@@ -72,6 +89,11 @@ export const sqliteAdapter: SqliteResourceAdapter = {
   async deleteOne<TData extends BaseRecord, TVariables = unknown>({
     id,
   }: DeleteOneParams<TVariables>): Promise<DeleteOneResponse<TData>> {
+    const accountId = await requireActiveAccountId();
+    const existing = await capsulesRepo.getByIdForAccount(accountId, String(id));
+    if (!existing) {
+      throw { message: "Capsule not found", statusCode: 404 };
+    }
     await capsulesRepo.deleteCascade(String(id));
     return { data: { id } as unknown as TData };
   },

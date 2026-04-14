@@ -1,6 +1,7 @@
 import type { Account } from "lib/models/account";
 import { newId } from "lib/sqlite/utils";
 import { BaseSqliteRepository } from "lib/sqlite/baseRepository";
+import { capsulesRepo } from "./capsuleRepository";
 
 export type AccountInsert = {
   id?: string;
@@ -143,6 +144,7 @@ export class AccountRepository extends BaseSqliteRepository {
     if (!row) {
       throw new Error("account.insert: row not found after insert");
     }
+    await capsulesRepo.seedDefaultCapsulesIfEmpty(id);
     return row;
   }
 
@@ -217,6 +219,29 @@ export class AccountRepository extends BaseSqliteRepository {
         ...values,
       );
     });
+  }
+
+  async deleteById(accountId: string): Promise<Account | null> {
+    const db = await this.db();
+    const existing = await this.getById(accountId);
+    if (!existing) return null;
+
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(`DELETE FROM accounts WHERE id = ?`, accountId);
+
+      // If we just deleted the active account, pick another account (if any) as active.
+      if (existing.isActive) {
+        const next = await db.getFirstAsync<{ id: string }>(
+          `SELECT id FROM accounts ORDER BY name COLLATE NOCASE ASC LIMIT 1`,
+        );
+        if (next?.id) {
+          await db.runAsync(`UPDATE accounts SET is_active = 0`);
+          await db.runAsync(`UPDATE accounts SET is_active = 1 WHERE id = ?`, next.id);
+        }
+      }
+    });
+
+    return existing;
   }
 }
 

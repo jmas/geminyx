@@ -1,0 +1,42 @@
+---
+description: Use project-root path aliases for imports; no parent-relative paths
+alwaysApply: true
+---
+
+# Imports from project root (path aliases)
+
+## Rule
+
+- **MUST** import using **path aliases** rooted at the project directory (`baseUrl` in `tsconfig.json`), not by walking up with `../`.
+- **MUST NOT** use parent-segment relative imports in application code: `../`, `../../`, `../../../`, etc.
+
+## Allowed patterns
+
+Configured aliases (see `tsconfig.json` `paths`):
+
+- `app/...`, `components/...`, `hooks/...`, `lib/...`, `modules/...`, `screens/...`, `utils/...`
+
+The `repositories` package resolves via `baseUrl` (barrel at `repositories/index.ts`):
+
+- `import { … } from "repositories"`
+
+Same-directory imports are fine when appropriate:
+
+- `import { … } from "./foo"` (sibling / colocated file only)
+
+## Examples
+
+```typescript
+// ❌ BAD — parent-relative
+import { appColors } from "../../lib/theme/appColors";
+import { AccountForm } from "../../../components/account/AccountForm";
+
+// ✅ GOOD — root / alias
+import { appColors } from "lib/theme/appColors";
+import { AccountForm } from "components/account/AccountForm";
+import { accountsRepo } from "repositories";
+```
+
+## When editing
+
+If you see `../` in an import path, rewrite it to the correct alias. Match existing project imports for consistency.

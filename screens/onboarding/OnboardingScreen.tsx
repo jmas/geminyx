@@ -1,9 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
-import type { FormikHelpers } from "formik";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ComponentProps } from "react";
 import {
-  Alert,
   Dimensions,
   FlatList,
   Image,
@@ -13,19 +11,12 @@ import {
   NativeSyntheticEvent,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   useColorScheme,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import {
-  AccountForm,
-  type AccountFormPalette,
-  type AccountFormValues,
-} from "components/account/AccountForm";
-import { accountsRepo } from "repositories";
 import { appColors, systemBlueForScheme } from "lib/theme/appColors";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -73,33 +64,17 @@ const INTRO_SLIDES: IntroSlide[] = [
 ];
 
 export type OnboardingScreenProps = {
-  onAccountCreated: () => void;
+  onFinishIntro: () => void;
 };
 
-export function OnboardingScreen({ onAccountCreated }: OnboardingScreenProps) {
+export function OnboardingScreen({ onFinishIntro }: OnboardingScreenProps) {
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
-  const flatListRef = useRef<FlatList<SlideItem>>(null);
+  const flatListRef = useRef<FlatList<IntroSlide>>(null);
   const [index, setIndex] = useState(0);
-  const totalSlides = INTRO_SLIDES.length + 1;
+  const totalSlides = INTRO_SLIDES.length;
 
   const palette = scheme === "dark" ? colors.dark : colors.light;
-  const formPalette: AccountFormPalette = useMemo(
-    () => ({
-      background: palette.background,
-      textPrimary: palette.textPrimary,
-      textSecondary: palette.textSecondary,
-      separator: palette.separator,
-      fieldBg: palette.fieldBg,
-      fieldBorder: palette.fieldBorder,
-      fieldText: palette.textPrimary,
-      placeholder: palette.placeholder,
-      error: palette.error,
-      primaryLabel: "#ffffff",
-      primaryButtonBg: systemBlueForScheme(scheme),
-    }),
-    [palette, scheme],
-  );
 
   const onMomentumScrollEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -128,117 +103,37 @@ export function OnboardingScreen({ onAccountCreated }: OnboardingScreenProps) {
     }
   }, [index]);
 
-  const handleCreateAccount = useCallback(
-    async (
-      values: AccountFormValues,
-      { setSubmitting }: FormikHelpers<AccountFormValues>,
-    ) => {
-      try {
-        await accountsRepo.createFirstFromOnboarding({
-          name: values.name,
-          email: values.email.trim() || undefined,
-          avatarUrl: values.avatarUrl.trim() || undefined,
-          capsuleUrl: values.capsuleUrl.trim() || undefined,
-        });
-        onAccountCreated();
-      } catch (e) {
-        console.error("createFirstAccountFromOnboarding failed", e);
-        Alert.alert(
-          "Could not create account",
-          e instanceof Error ? e.message : String(e),
-        );
-      } finally {
-        setSubmitting(false);
-      }
-    },
-    [onAccountCreated],
-  );
-
   const illustrationTint = systemBlueForScheme(scheme);
 
-  const renderItem: ListRenderItem<SlideItem> = useCallback(
-    ({ item }) => {
-      if (item.type === "intro") {
-        return (
-          <View style={[styles.slide, { width: SCREEN_WIDTH }]}>
-            <View style={styles.introColumn}>
-              <OnboardingIllustration
-                scheme={scheme}
-                image={item.slide.image}
-                name={item.slide.illustration}
-                tint={illustrationTint}
-              />
-              <Text
-                style={[styles.title, { color: palette.textPrimary }]}
-                accessibilityRole="header"
-              >
-                {item.slide.title}
-              </Text>
-              <Text style={[styles.body, { color: palette.textSecondary }]}>
-                {item.slide.body}
-              </Text>
-            </View>
-          </View>
-        );
-      }
+  const renderItem: ListRenderItem<IntroSlide> = useCallback(
+    ({ item: slide }) => {
       return (
         <View style={[styles.slide, { width: SCREEN_WIDTH }]}>
-          <ScrollView
-            style={styles.formScroll}
-            contentContainerStyle={styles.formScrollContent}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.formHeader}>
-              <OnboardingIllustration
-                scheme={scheme}
-                name="person-add-outline"
-                tint={illustrationTint}
-                size="small"
-              />
-              <Text
-                style={[styles.title, { color: palette.textPrimary }]}
-                accessibilityRole="header"
-              >
-                Create your account
-              </Text>
-              <Text style={[styles.body, { color: palette.textSecondary }]}>
-                This profile is stored only on this device. You can add more
-                accounts later in Settings.
-              </Text>
-            </View>
-            <View style={styles.formWrap}>
-              <AccountForm
-                palette={formPalette}
-                onSubmit={handleCreateAccount}
-              />
-            </View>
-          </ScrollView>
+          <View style={styles.introColumn}>
+            <OnboardingIllustration
+              scheme={scheme}
+              image={slide.image}
+              name={slide.illustration}
+              tint={illustrationTint}
+            />
+            <Text
+              style={[styles.title, { color: palette.textPrimary }]}
+              accessibilityRole="header"
+            >
+              {slide.title}
+            </Text>
+            <Text style={[styles.body, { color: palette.textSecondary }]}>
+              {slide.body}
+            </Text>
+          </View>
         </View>
       );
     },
-    [
-      formPalette,
-      handleCreateAccount,
-      illustrationTint,
-      palette.textPrimary,
-      palette.textSecondary,
-      scheme,
-    ],
+    [illustrationTint, palette.textPrimary, palette.textSecondary, scheme],
   );
 
-  const data: SlideItem[] = [
-    ...INTRO_SLIDES.map((slide) => ({
-      type: "intro" as const,
-      key: slide.key,
-      slide,
-    })),
-    { type: "form" as const, key: "form" },
-  ];
-
   const isFirst = index === 0;
-  const canGoNext = index < totalSlides - 1;
+  const isLast = index === totalSlides - 1;
 
   return (
     <View
@@ -250,7 +145,7 @@ export function OnboardingScreen({ onAccountCreated }: OnboardingScreenProps) {
       <FlatList
         ref={flatListRef}
         style={styles.list}
-        data={data}
+        data={INTRO_SLIDES}
         keyExtractor={(item) => item.key}
         horizontal
         pagingEnabled
@@ -307,9 +202,9 @@ export function OnboardingScreen({ onAccountCreated }: OnboardingScreenProps) {
           </Pressable>
 
           <View style={styles.dots} accessibilityLabel="Onboarding progress">
-            {data.map((item, i) => (
+            {INTRO_SLIDES.map((slide, i) => (
               <View
-                key={item.key}
+                key={slide.key}
                 style={[
                   styles.dot,
                   {
@@ -323,45 +218,50 @@ export function OnboardingScreen({ onAccountCreated }: OnboardingScreenProps) {
             ))}
           </View>
 
-          <Pressable
-            onPress={goNext}
-            disabled={!canGoNext}
-            style={({ pressed }) => [
-              styles.nextBtn,
-              { backgroundColor: systemBlueForScheme(scheme) },
-              pressed && canGoNext && { opacity: 0.88 },
-              !canGoNext && { opacity: 0 },
-            ]}
-            accessibilityLabel="Next"
-          >
-            <Text style={styles.nextLabel}>Next</Text>
-          </Pressable>
+          {isLast ? (
+            <Pressable
+              onPress={onFinishIntro}
+              style={({ pressed }) => [
+                styles.nextBtn,
+                { backgroundColor: systemBlueForScheme(scheme) },
+                pressed && { opacity: 0.88 },
+              ]}
+              accessibilityLabel="Get started"
+            >
+              <Text style={styles.nextLabel}>Get started</Text>
+            </Pressable>
+          ) : (
+            <Pressable
+              onPress={goNext}
+              style={({ pressed }) => [
+                styles.nextBtn,
+                { backgroundColor: systemBlueForScheme(scheme) },
+                pressed && { opacity: 0.88 },
+              ]}
+              accessibilityLabel="Next"
+            >
+              <Text style={styles.nextLabel}>Next</Text>
+            </Pressable>
+          )}
         </View>
       </View>
     </View>
   );
 }
 
-type SlideItem =
-  | { type: "intro"; key: string; slide: IntroSlide }
-  | { type: "form"; key: "form" };
-
 function OnboardingIllustration({
   scheme,
   image,
   name,
   tint,
-  size = "large",
 }: {
   scheme: "light" | "dark" | null | undefined;
   image?: ImageSourcePropType;
   name: IonIconName;
   tint: string;
-  size?: "large" | "small";
 }) {
-  const isLarge = size === "large";
-  const plate = isLarge ? styles.illustrationPlate : styles.illustrationPlateSmall;
-  const iconSize = isLarge ? 108 : 72;
+  const plate = styles.illustrationPlate;
+  const iconSize = 108;
   const plateBg =
     scheme === "dark" ? "rgba(10, 132, 255, 0.14)" : "rgba(0, 122, 255, 0.11)";
 
@@ -370,7 +270,7 @@ function OnboardingIllustration({
       <View style={[plate, { backgroundColor: plateBg }]}>
         <Image
           source={image}
-          style={isLarge ? styles.illustrationImage : styles.illustrationImageSmall}
+          style={styles.illustrationImage}
           resizeMode="contain"
           accessibilityIgnoresInvertColors
         />
@@ -392,10 +292,6 @@ const colors = {
     textSecondary: "#3c3c43",
     separator: "rgba(60, 60, 67, 0.29)",
     backPressed: "rgba(0, 0, 0, 0.04)",
-    fieldBg: "rgba(120, 120, 128, 0.12)",
-    fieldBorder: "rgba(60, 60, 67, 0.18)",
-    placeholder: "rgba(60, 60, 67, 0.45)",
-    error: appColors.destructive,
     dotInactive: "rgba(120, 120, 128, 0.35)",
   },
   dark: {
@@ -404,10 +300,6 @@ const colors = {
     textSecondary: "rgba(235, 235, 245, 0.75)",
     separator: "rgba(255, 255, 255, 0.12)",
     backPressed: "rgba(255, 255, 255, 0.06)",
-    fieldBg: "rgba(120, 120, 128, 0.24)",
-    fieldBorder: "rgba(255, 255, 255, 0.12)",
-    placeholder: "rgba(235, 235, 245, 0.45)",
-    error: "#ff6b6b",
     dotInactive: "rgba(235, 235, 245, 0.25)",
   },
 } as const;
@@ -439,21 +331,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 28,
   },
-  illustrationPlateSmall: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 20,
-  },
   illustrationImage: {
     width: 176,
     height: 176,
-  },
-  illustrationImageSmall: {
-    width: 112,
-    height: 112,
   },
   title: {
     fontSize: 26,
@@ -467,22 +347,6 @@ const styles = StyleSheet.create({
     lineHeight: 24,
     textAlign: "center",
     maxWidth: 400,
-  },
-  formScroll: {
-    flex: 1,
-  },
-  formScrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    justifyContent: "center",
-  },
-  formHeader: {
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  formWrap: {
-    width: "100%",
   },
   footer: {
     borderTopWidth: StyleSheet.hairlineWidth,
