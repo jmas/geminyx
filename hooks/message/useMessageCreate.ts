@@ -1,12 +1,11 @@
-import { useCreate, useInvalidate, type HttpError } from "@refinedev/core";
-import { useRouter } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import GeminiFetcher, {
   fetchGeminiParsed,
   type GeminiFetchTlsIdentity,
 } from "gemini-fetcher";
 import { generateLocalClientPkcs12OffThread } from "lib/account/generateLocalClientPkcs12OffThread";
 import type { Capsule } from "lib/models/capsule";
-import type { DialogMessage } from "lib/models/dialogMessage";
+import type { ThreadMessage } from "lib/models/threadMessage";
 import {
   geminiRequestPathForMessage,
   isCrossOriginGeminiUrl,
@@ -20,7 +19,6 @@ import {
   suggestedCapsuleNameFromGeminiUrl,
   uint8ArrayToBase64,
 } from "lib/models/gemini";
-import { RESOURCES } from "lib/refineDataProvider";
 import type { CapsuleCreateVariables } from "lib/resources/capsules";
 import type { MessageCreateVariables } from "lib/resources/messages";
 import {
@@ -32,8 +30,13 @@ import {
   type SetStateAction,
 } from "react";
 import { Alert } from "react-native";
-import { accountsRepo, dialogsRepo } from "repositories";
-import { logDialogMessage, summarizeRequestUrl } from "utils/dialogMessageLog";
+import {
+  accountsRepo,
+  capsulesRepo,
+  threadsRepo,
+  messagesRepo,
+} from "repositories";
+import { logThreadMessage, summarizeRequestUrl } from "utils/threadMessageLog";
 
 const CLIENT_CERT_GENERATE_TIMEOUT_MS = 150_000; // 2.5 minutes
 
@@ -71,20 +74,22 @@ export type SubmitMessageFlowOptions = {
 };
 
 export type UseMessageCreateParams = {
-  dialogId: string;
+  threadId: string;
   capsuleUrl: string;
   activeAccountId?: string;
   activeAccountName?: string;
   activeAccountHasClientCert?: boolean;
-  dialogClientCertShareAllowed?: boolean;
+  threadClientCertShareAllowed?: boolean;
   /** From the active account: PKCS#12 client cert for Gemini TLS (optional). */
   geminiTls?: GeminiFetchTlsIdentity | null;
   onClientCertGenerateStart?: () => void;
   onClientCertGenerateEnd?: (result: { ok: boolean }) => void;
-  messagesRef: MutableRefObject<DialogMessage[]>;
-  setMessages: Dispatch<SetStateAction<DialogMessage[]>>;
+  messagesRef: MutableRefObject<ThreadMessage[]>;
+  setMessages: Dispatch<SetStateAction<ThreadMessage[]>>;
   /** e.g. scroll list to end after optimistic append */
   scheduleScrollToEnd: () => void;
+  /** Optional hook for parents to refetch local DB–backed UI after mutations. */
+  onLocalDataChanged?: () => void | Promise<void>;
 };
 
 function isGeminiClientCertRequiredStatus(code: number): boolean {
@@ -140,40 +145,42 @@ function newLocalMessageId(prefix: "out" | "in"): string {
 }
 
 /**
- * Inserts dialog messages via Refine (`useCreate` / `useMutation` shape) and runs the
+ * Inserts thread messages via Refine (`useCreate` / `useMutation` shape) and runs the
  * Gemini fetch → persist outgoing + incoming message flow.
  */
 export function useMessageCreate({
-  dialogId,
+  threadId,
   capsuleUrl,
   activeAccountId,
   activeAccountName,
   activeAccountHasClientCert,
-  dialogClientCertShareAllowed,
+  threadClientCertShareAllowed,
   geminiTls,
   onClientCertGenerateStart,
   onClientCertGenerateEnd,
   messagesRef,
   setMessages,
   scheduleScrollToEnd,
+  onLocalDataChanged,
 }: UseMessageCreateParams) {
   const router = useRouter();
-  const invalidate = useInvalidate();
-  const createMutation = useCreate<
-    DialogMessage,
-    HttpError,
-    MessageCreateVariables
-  >({
-    resource: RESOURCES.messages,
-  });
-  const { mutateAsync: createMessage } = createMutation;
-  const { mutateAsync: createCapsule } = useCreate<
-    Capsule,
-    HttpError,
-    CapsuleCreateVariables
-  >({
-    resource: RESOURCES.capsules,
-  });
+
+  const createCapsuleFromVariables = useCallback(
+    async (values: CapsuleCreateVariables): Promise<Capsule> => {
+      const active = await accountsRepo.getActive();
+      if (!active?.id) {
+        throw new Error("No active account");
+      }
+      return capsulesRepo.insertWithThread({
+        accountId: active.id,
+        name: values.name,
+        avatarUrl: values.avatarUrl,
+        url: values.url,
+        description: values.description,
+      });
+    },
+    [],
+  );
 
   const flowBusyRef = useRef(false);
   const [flowPending, setFlowPending] = useState(false);
@@ -193,14 +200,14 @@ export function useMessageCreate({
             : "start"
           : "send";
 
-      if (!dialogId) {
-        logDialogMessage("flow.skip", { reason: "no_dialog_id", flowKind });
+      if (!threadId) {
+        logThreadMessage("flow.skip", { reason: "no_thread_id", flowKind });
         return;
       }
       if (flowBusyRef.current) {
-        logDialogMessage("flow.skip", {
+        logThreadMessage("flow.skip", {
           reason: "already_busy",
-          dialogId,
+          threadId,
           flowKind,
         });
         return;
@@ -208,14 +215,14 @@ export function useMessageCreate({
 
       const url = capsuleUrl;
       if (!url) {
-        logDialogMessage("flow.blocked", {
+        logThreadMessage("flow.blocked", {
           reason: "no_capsule_url",
-          dialogId,
+          threadId,
           flowKind,
         });
         Alert.alert(
           "No capsule URL",
-          "Add a Gemini URL to this capsule to start the dialog.",
+          "Add a Gemini URL to this capsule to start the thread.",
         );
         return;
       }
@@ -224,8 +231,8 @@ export function useMessageCreate({
       const prevLast =
         prevList.length > 0 ? prevList[prevList.length - 1] : undefined;
 
-      logDialogMessage("flow.begin", {
-        dialogId,
+      logThreadMessage("flow.begin", {
+        threadId,
         flowKind,
         capsuleUrlSummary: summarizeRequestUrl(url.trim()),
         messageCount: prevList.length,
@@ -251,14 +258,14 @@ export function useMessageCreate({
         } else {
           requestUrl = resolveGeminiRequestUrl(url, prevLast, requestText);
         }
-        logDialogMessage("request_url.resolved", {
-          dialogId,
+        logThreadMessage("request_url.resolved", {
+          threadId,
           flowKind,
           summary: summarizeRequestUrl(requestUrl),
         });
       } catch (e) {
-        logDialogMessage("request_url.error", {
-          dialogId,
+        logThreadMessage("request_url.error", {
+          threadId,
           flowKind,
           error: e instanceof Error ? e.message : String(e),
         });
@@ -270,15 +277,15 @@ export function useMessageCreate({
       const outgoingId = newLocalMessageId("out");
       const sentAt = new Date().toISOString();
       const contentLength = new TextEncoder().encode(trimmedDisplayBody).length;
-      logDialogMessage("optimistic.outgoing", {
-        dialogId,
+      logThreadMessage("optimistic.outgoing", {
+        threadId,
         flowKind,
         outgoingId,
         sentAt,
         contentLength,
         hasBody: trimmedDisplayBody.length > 0,
       });
-      const optimisticOut: DialogMessage = {
+      const optimisticOut: ThreadMessage = {
         id: outgoingId,
         contentLength,
         sentAt,
@@ -293,8 +300,8 @@ export function useMessageCreate({
       scheduleScrollToEnd();
 
       try {
-        logDialogMessage("gemini.fetch.begin", {
-          dialogId,
+        logThreadMessage("gemini.fetch.begin", {
+          threadId,
           flowKind,
           outgoingId,
           requestSummary: summarizeRequestUrl(requestUrl),
@@ -309,7 +316,7 @@ export function useMessageCreate({
         // Client-cert flow:
         // - cert is stored at the account level (PKCS#12 in DB + optional Keychain identity)
         // - when the server returns 6X, generate if missing (once per account)
-        // - ask once per dialog whether we may share/use it with this server (TLS client auth)
+        // - ask once per thread whether we may share/use it with this server (TLS client auth)
         // - if approved, retry request with cert
         if (
           isGeminiClientCertRequiredStatus(parsed.statusCode) &&
@@ -349,10 +356,7 @@ export function useMessageCreate({
                   geminiClientP12Base64: p12,
                   geminiClientP12Passphrase: passphrase,
                 });
-                await invalidate({
-                  resource: RESOURCES.accounts,
-                  invalidates: ["list"],
-                });
+                await onLocalDataChanged?.();
                 if (GeminiFetcher?.storeIdentityFromPkcs12) {
                   await GeminiFetcher.storeIdentityFromPkcs12({
                     identityLabel: label,
@@ -367,8 +371,8 @@ export function useMessageCreate({
                 };
                 onClientCertGenerateEnd?.({ ok: true });
               } catch (certErr) {
-                logDialogMessage("gemini.client_cert.generate.error", {
-                  dialogId,
+                logThreadMessage("gemini.client_cert.generate.error", {
+                  threadId,
                   flowKind,
                   error:
                     certErr instanceof Error
@@ -387,17 +391,17 @@ export function useMessageCreate({
           }
 
           const nowHasCert = !!p12.trim();
-          let shareAllowed = dialogClientCertShareAllowed === true;
+          let shareAllowed = threadClientCertShareAllowed === true;
           if (nowHasCert && !shareAllowed) {
             const okToShare = await confirmAsync({
               title: "Share certificate with server?",
               message:
-                "To access this capsule, Geminyx must present your account’s client certificate during the TLS handshake. Allow this for this dialog?",
+                "To access this capsule, Geminyx must present your account’s client certificate during the TLS handshake. Allow this for this thread?",
               confirmText: "Allow",
               cancelText: "Cancel",
             });
             if (okToShare) {
-              await dialogsRepo.setClientCertShareAllowed(dialogId, true);
+              await threadsRepo.setClientCertShareAllowed(threadId, true);
               shareAllowed = true;
             }
           }
@@ -407,7 +411,7 @@ export function useMessageCreate({
             const allowed =
               shareAllowed ||
               (await (async () => {
-                const d = await dialogsRepo.getById(dialogId);
+                const d = await threadsRepo.getById(threadId);
                 return d?.clientCertShareAllowed === true;
               })());
             if (allowed) {
@@ -444,8 +448,8 @@ export function useMessageCreate({
           }
         }
 
-        logDialogMessage("gemini.fetch.parsed", {
-          dialogId,
+        logThreadMessage("gemini.fetch.parsed", {
+          threadId,
           flowKind,
           outgoingId,
           statusCode: parsed.statusCode,
@@ -457,25 +461,23 @@ export function useMessageCreate({
         const metaTrim = parsed.meta.trim();
         const requestPath = geminiRequestPathForMessage(url, fetchedUrl);
 
-        logDialogMessage("persist.outgoing.begin", {
-          dialogId,
+        logThreadMessage("persist.outgoing.begin", {
+          threadId,
           flowKind,
           outgoingId,
         });
-        const { data: savedOut } = await createMessage({
-          values: {
-            dialog_id: dialogId,
-            id: outgoingId,
-            body:
-              trimmedDisplayBody.length > 0 ? trimmedDisplayBody : undefined,
-            contentLength,
-            sentAt,
-            isOutgoing: true,
-            requestPath: outgoingRequestPath,
-          },
+        const savedOut = await messagesRepo.createFromVariables({
+          thread_id: threadId,
+          id: outgoingId,
+          body:
+            trimmedDisplayBody.length > 0 ? trimmedDisplayBody : undefined,
+          contentLength,
+          sentAt,
+          isOutgoing: true,
+          requestPath: outgoingRequestPath,
         });
-        logDialogMessage("persist.outgoing.done", {
-          dialogId,
+        logThreadMessage("persist.outgoing.done", {
+          threadId,
           flowKind,
           outgoingId,
           savedId: savedOut.id,
@@ -496,55 +498,44 @@ export function useMessageCreate({
           ) {
             try {
               const capName = suggestedCapsuleNameFromGeminiUrl(target);
-              logDialogMessage("gemini.redirect.new_capsule.begin", {
-                dialogId,
+              logThreadMessage("gemini.redirect.new_capsule.begin", {
+                threadId,
                 flowKind,
                 targetSummary: summarizeRequestUrl(target),
                 capName,
               });
-              const { data: newCap } = await createCapsule({
-                values: {
-                  name: capName,
-                  url: target,
-                },
+              const newCap = await createCapsuleFromVariables({
+                name: capName,
+                url: target,
               });
               const noticeId = newLocalMessageId("in");
               const noticeSentAt = new Date().toISOString();
               const noticeBody = `Redirected to another Gemini host (${capName}). A new capsule was created — opening it now.`;
               const noticeLen = new TextEncoder().encode(noticeBody).length;
-              const { data: savedNotice } = await createMessage({
-                values: {
-                  dialog_id: dialogId,
-                  id: noticeId,
-                  sentAt: noticeSentAt,
-                  isOutgoing: false,
-                  requestPath: geminiRequestPathForMessage(
-                    capsuleUrl,
-                    fetchedUrl,
-                  ),
-                  body: noticeBody,
-                  contentLength: noticeLen,
-                },
+              const savedNotice = await messagesRepo.createFromVariables({
+                thread_id: threadId,
+                id: noticeId,
+                sentAt: noticeSentAt,
+                isOutgoing: false,
+                requestPath: geminiRequestPathForMessage(
+                  capsuleUrl,
+                  fetchedUrl,
+                ),
+                body: noticeBody,
+                contentLength: noticeLen,
               });
               setMessages((prev) => [...prev, savedNotice]);
-              await invalidate({
-                resource: RESOURCES.capsules,
-                invalidates: ["list"],
-              });
-              await invalidate({
-                resource: RESOURCES.dialogs,
-                invalidates: ["list"],
-              });
-              logDialogMessage("gemini.redirect.new_capsule.done", {
-                dialogId,
+              await onLocalDataChanged?.();
+              logThreadMessage("gemini.redirect.new_capsule.done", {
+                threadId,
                 newCapsuleId: newCap.id,
                 flowKind,
               });
               router.replace(
-                `/dialog/${newCap.id}?name=${encodeURIComponent(newCap.name)}`,
+                `/thread/${newCap.id}?name=${encodeURIComponent(newCap.name)}` as Href,
               );
-              logDialogMessage("flow.success", {
-                dialogId,
+              logThreadMessage("flow.success", {
+                threadId,
                 flowKind,
                 outgoingId,
                 replyId: noticeId,
@@ -552,8 +543,8 @@ export function useMessageCreate({
               });
               return;
             } catch (redirErr) {
-              logDialogMessage("gemini.redirect.new_capsule.error", {
-                dialogId,
+              logThreadMessage("gemini.redirect.new_capsule.error", {
+                threadId,
                 flowKind,
                 error:
                   redirErr instanceof Error
@@ -594,8 +585,8 @@ export function useMessageCreate({
 
           if (promptUrl) {
             try {
-              logDialogMessage("gemini.input.prompt_fetch.begin", {
-                dialogId,
+              logThreadMessage("gemini.input.prompt_fetch.begin", {
+                threadId,
                 flowKind,
                 summary: summarizeRequestUrl(promptUrl),
               });
@@ -603,8 +594,8 @@ export function useMessageCreate({
                 promptUrl,
                 geminiTls ?? undefined,
               );
-              logDialogMessage("gemini.input.prompt_fetch.done", {
-                dialogId,
+              logThreadMessage("gemini.input.prompt_fetch.done", {
+                threadId,
                 flowKind,
                 statusCode: promptPage.statusCode,
                 bodyLen: promptPage.body.length,
@@ -616,8 +607,8 @@ export function useMessageCreate({
                 incomingBody = promptPage.body;
               }
             } catch (e) {
-              logDialogMessage("gemini.input.prompt_fetch.error", {
-                dialogId,
+              logThreadMessage("gemini.input.prompt_fetch.error", {
+                threadId,
                 flowKind,
                 error: e instanceof Error ? e.message : String(e),
               });
@@ -647,7 +638,7 @@ export function useMessageCreate({
           parsed.meta,
         );
 
-        let optimisticIn: DialogMessage;
+        let optimisticIn: ThreadMessage;
         let incomingCreateValues: MessageCreateVariables;
 
         if (asBlob) {
@@ -664,7 +655,7 @@ export function useMessageCreate({
             ...(metaTrim.length > 0 ? { meta: metaTrim } : {}),
           };
           incomingCreateValues = {
-            dialog_id: dialogId,
+            thread_id: threadId,
             id: replyId,
             sentAt: replySentAt,
             isOutgoing: false,
@@ -674,8 +665,8 @@ export function useMessageCreate({
             status: parsed.statusCode,
             meta: metaTrim.length > 0 ? metaTrim : undefined,
           };
-          logDialogMessage("optimistic.incoming", {
-            dialogId,
+          logThreadMessage("optimistic.incoming", {
+            threadId,
             flowKind,
             replyId,
             replySentAt,
@@ -699,7 +690,7 @@ export function useMessageCreate({
             ...(metaTrim.length > 0 ? { meta: metaTrim } : {}),
           };
           incomingCreateValues = {
-            dialog_id: dialogId,
+            thread_id: threadId,
             id: replyId,
             body: optimisticIn.body,
             contentLength: replyContentLength,
@@ -709,8 +700,8 @@ export function useMessageCreate({
             status: parsed.statusCode,
             meta: metaTrim.length > 0 ? metaTrim : undefined,
           };
-          logDialogMessage("optimistic.incoming", {
-            dialogId,
+          logThreadMessage("optimistic.incoming", {
+            threadId,
             flowKind,
             replyId,
             replySentAt,
@@ -725,16 +716,16 @@ export function useMessageCreate({
         setMessages((prev) => [...prev, optimisticIn]);
         scheduleScrollToEnd();
 
-        logDialogMessage("persist.incoming.begin", {
-          dialogId,
+        logThreadMessage("persist.incoming.begin", {
+          threadId,
           flowKind,
           replyId,
         });
-        const { data: savedIn } = await createMessage({
-          values: incomingCreateValues,
-        });
-        logDialogMessage("persist.incoming.done", {
-          dialogId,
+        const savedIn = await messagesRepo.createFromVariables(
+          incomingCreateValues,
+        );
+        logThreadMessage("persist.incoming.done", {
+          threadId,
           flowKind,
           replyId,
           savedId: savedIn.id,
@@ -745,20 +736,17 @@ export function useMessageCreate({
           prev.map((m) => (m.id === replyId ? savedIn : m)),
         );
 
-        logDialogMessage("invalidate.dialogs_list", { dialogId, flowKind });
-        await invalidate({
-          resource: RESOURCES.dialogs,
-          invalidates: ["list"],
-        });
-        logDialogMessage("flow.success", {
-          dialogId,
+        logThreadMessage("invalidate.threads_list", { threadId, flowKind });
+        await onLocalDataChanged?.();
+        logThreadMessage("flow.success", {
+          threadId,
           flowKind,
           outgoingId,
           replyId,
         });
       } catch (e) {
-        logDialogMessage("flow.error", {
-          dialogId,
+        logThreadMessage("flow.error", {
+          threadId,
           flowKind,
           outgoingId,
           error: e instanceof Error ? e.message : String(e),
@@ -771,7 +759,7 @@ export function useMessageCreate({
         const body =
           errText.trim().length > 0 ? errText.trim() : "Unknown error";
         const replyContentLength = new TextEncoder().encode(body).length;
-        const optimisticIn: DialogMessage = {
+        const optimisticIn: ThreadMessage = {
           id: replyId,
           contentLength: replyContentLength,
           sentAt: replySentAt,
@@ -784,24 +772,22 @@ export function useMessageCreate({
         scheduleScrollToEnd();
 
         try {
-          const { data: savedIn } = await createMessage({
-            values: {
-              dialog_id: dialogId,
-              id: replyId,
-              body,
-              contentLength: replyContentLength,
-              sentAt: replySentAt,
-              isOutgoing: false,
-              requestPath: outgoingRequestPath,
-              status: 50,
-            },
+          const savedIn = await messagesRepo.createFromVariables({
+            thread_id: threadId,
+            id: replyId,
+            body,
+            contentLength: replyContentLength,
+            sentAt: replySentAt,
+            isOutgoing: false,
+            requestPath: outgoingRequestPath,
+            status: 50,
           });
           setMessages((prev) =>
             prev.map((m) => (m.id === replyId ? savedIn : m)),
           );
         } catch (persistErr) {
-          logDialogMessage("persist.error_reply.failed", {
-            dialogId,
+          logThreadMessage("persist.error_reply.failed", {
+            threadId,
             flowKind,
             outgoingId,
             error:
@@ -819,12 +805,11 @@ export function useMessageCreate({
       activeAccountId,
       activeAccountName,
       capsuleUrl,
-      createCapsule,
-      createMessage,
-      dialogId,
-      dialogClientCertShareAllowed,
+      createCapsuleFromVariables,
+      threadId,
+      threadClientCertShareAllowed,
       geminiTls,
-      invalidate,
+      onLocalDataChanged,
       messagesRef,
       onClientCertGenerateEnd,
       onClientCertGenerateStart,
@@ -835,7 +820,6 @@ export function useMessageCreate({
   );
 
   return {
-    ...createMutation,
     flowPending,
     submitMessageFlow,
   };

@@ -50,15 +50,15 @@ const INTRO_SLIDES: IntroSlide[] = [
     illustration: "cube-outline",
   },
   {
-    key: "dialogs",
-    title: "Dialogs",
-    body: "A dialog is your history with one capsule: a single conversation thread where everything you have exchanged stays in order.",
+    key: "threads",
+    title: "Threads",
+    body: "A thread is your history with one capsule: a single conversation where everything you have exchanged stays in order.",
     illustration: "chatbubbles-outline",
   },
   {
     key: "accounts",
     title: "Accounts",
-    body: "Accounts live on your device. You can have more than one; capsules and dialogs belong to the active account. Export or import everything as one file to move to another device.",
+    body: "Accounts live on your device. You can have more than one; capsules and threads belong to the active account. Export or import everything as one file to move to another device.",
     illustration: "shield-checkmark-outline",
   },
 ];

@@ -1,10 +1,15 @@
 import { AccountRepository } from "./accountRepository";
 import { BlobRepository } from "./blobRepository";
 import { CapsuleRepository } from "./capsuleRepository";
-import { DialogRepository } from "./dialogRepository";
+import { ThreadRepository } from "./threadRepository";
 import { MessageRepository } from "./messageRepository";
 
-export { AccountRepository, type AccountInsert, type AccountPatch } from "./accountRepository";
+export {
+  AccountRepository,
+  accountsRepo,
+  type AccountInsert,
+  type AccountPatch,
+} from "./accountRepository";
 export { BlobRepository } from "./blobRepository";
 export {
   CapsuleRepository,
@@ -12,11 +17,8 @@ export {
   type CapsuleInsert,
   type CapsulePatch,
 } from "./capsuleRepository";
-export { DialogRepository } from "./dialogRepository";
+export { ThreadRepository, threadsRepo } from "./threadRepository";
 export { MessageRepository } from "./messageRepository";
 
-export const accountsRepo = new AccountRepository();
 export const blobsRepo = new BlobRepository();
-export const dialogsRepo = new DialogRepository();
 export const messagesRepo = new MessageRepository();
-

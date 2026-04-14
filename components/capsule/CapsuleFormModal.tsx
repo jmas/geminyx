@@ -1,5 +1,5 @@
-import { useCreate, useInvalidate } from "@refinedev/core";
 import type { FormikHelpers } from "formik";
+import { useState } from "react";
 import {
   Alert,
   Modal,
@@ -17,7 +17,7 @@ import {
 } from "components/capsule/CapsuleForm";
 import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import type { Capsule } from "lib/models/capsule";
-import { RESOURCES } from "lib/refineDataProvider";
+import { accountsRepo, capsulesRepo } from "repositories";
 
 export type { CapsuleFormModalPalette } from "components/capsule/CapsuleForm";
 
@@ -40,17 +40,7 @@ export function CapsuleFormModal({
 }: CapsuleFormModalProps) {
   const scheme = useColorScheme();
   const palette: CapsuleFormModalPalette = selectCapsuleUiPalette(scheme);
-
-  const invalidate = useInvalidate();
-  const { mutateAsync: createCapsule, mutation: createMutation } = useCreate({
-    resource: RESOURCES.capsules,
-    mutationOptions: {
-      onSuccess: async () => {
-        await invalidate({ resource: RESOURCES.capsules, invalidates: ["list"] });
-        await invalidate({ resource: RESOURCES.dialogs, invalidates: ["list"] });
-      },
-    },
-  });
+  const [submitPending, setSubmitPending] = useState(false);
 
   function dismissCancelled() {
     onClose({ cancelled: true });
@@ -60,16 +50,20 @@ export function CapsuleFormModal({
     values: CapsuleFormValues,
     { setSubmitting, resetForm }: FormikHelpers<CapsuleFormValues>,
   ) {
+    setSubmitPending(true);
     try {
-      const { data: capsule } = await createCapsule({
-        values: {
-          name: values.name.trim(),
-          avatarUrl: values.avatarUrl.trim() || undefined,
-          url: values.url.trim() || undefined,
-          description: values.description.trim() || undefined,
-        },
+      const active = await accountsRepo.getActive();
+      if (!active?.id) {
+        Alert.alert("No account", "Select an account before adding a capsule.");
+        return;
+      }
+      const created = await capsulesRepo.insertWithThread({
+        accountId: active.id,
+        name: values.name.trim(),
+        avatarUrl: values.avatarUrl.trim() || undefined,
+        url: values.url.trim() || undefined,
+        description: values.description.trim() || undefined,
       });
-      const created = capsule as Capsule;
       resetForm({ values: capsuleFormEmptyValues });
       onClose({ created });
     } catch (e) {
@@ -79,6 +73,7 @@ export function CapsuleFormModal({
         e instanceof Error ? e.message : String(e),
       );
     } finally {
+      setSubmitPending(false);
       setSubmitting(false);
     }
   }
@@ -102,7 +97,7 @@ export function CapsuleFormModal({
         <CapsuleForm
           palette={palette}
           scheme={scheme}
-          isPending={createMutation.isPending}
+          isPending={submitPending}
           initialValues={capsuleFormEmptyValues}
           submitLabel="Add"
           onCancel={dismissCancelled}

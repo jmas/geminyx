@@ -9,5 +9,13 @@
   "[typescriptreact]": {
     "editor.defaultFormatter": "esbenp.prettier-vscode"
   },
-  "cSpell.words": ["geminyx", "Gemtext", "Pressable", "refinedev", "Swipeable"]
+  "cSpell.words": [
+    "geminyx",
+    "Gemtext",
+    "nozbe",
+    "Pressable",
+    "refinedev",
+    "Swipeable",
+    "watermelondb"
+  ]
 }

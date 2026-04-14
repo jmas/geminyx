@@ -1,11 +1,10 @@
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { router, type Href } from "expo-router";
 import {
   useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -19,57 +18,70 @@ import {
   useColorScheme,
   View,
 } from "react-native";
-import { usePopupManager } from "react-popup-manager";
+import { useNavigation } from "@react-navigation/native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
-import { CapsuleFormModal } from "components/capsule/CapsuleFormModal";
-import {
-  selectCapsuleUiPalette,
-  type CapsuleListRowPalette,
-} from "components/capsule/capsuleUiPalette";
 import { SwipeToDeleteRow } from "components/ui/SwipeToDeleteRow";
-import type { Capsule } from "lib/models/capsule";
+import type { Thread } from "lib/models/thread";
 import {
+  appColors,
   navigationChromeForScheme,
   systemBlueForScheme,
 } from "lib/theme/appColors";
-import { accountsRepo, capsulesRepo } from "repositories";
+import { accountsRepo, capsulesRepo, threadsRepo } from "repositories";
 import { avatarHueFromId, initialsFromName } from "utils/avatar";
+import { formatLastMessageDate } from "utils/formatLastMessageDate";
 
 const LONG_PRESS_MS = 450;
 
-export function CapsuleListScreen() {
+const colors = {
+  light: {
+    background: appColors.screenLight,
+    textPrimary: "#000000",
+    textSecondary: "#8e8e93",
+    separator: "rgba(60, 60, 67, 0.29)",
+    rowPressed: "rgba(0, 0, 0, 0.04)",
+  },
+  dark: {
+    background: appColors.screenDark,
+    textPrimary: "#f2f2f7",
+    textSecondary: "rgba(235, 235, 245, 0.55)",
+    separator: "rgba(84, 84, 88, 0.55)",
+    rowPressed: "rgba(255, 255, 255, 0.06)",
+  },
+} as const;
+
+type ListPalette = (typeof colors)[keyof typeof colors];
+
+export function ThreadListScreen() {
   const navigation = useNavigation();
   const scheme = useColorScheme();
-  const palette = selectCapsuleUiPalette(scheme);
-  const popupManager = usePopupManager();
+  const palette = scheme === "dark" ? colors.dark : colors.light;
+  const tint = systemBlueForScheme(scheme);
   const openSwipeRef = useRef<SwipeableMethods | null>(null);
-  const suppressNextRowPressRef = useRef<{ id: string; untilMs: number } | null>(
-    null,
-  );
 
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const [capsules, setCapsules] = useState<Capsule[]>([]);
+  const [threads, setThreads] = useState<Thread[]>([]);
 
-  const loadCapsules = useCallback(async () => {
+  const loadThreads = useCallback(async () => {
     const a = await accountsRepo.getActive();
     if (!a?.id) {
-      setCapsules([]);
+      setThreads([]);
       return;
     }
-    setCapsules(await capsulesRepo.listForAccount(a.id));
+    setThreads(await threadsRepo.listForAccount(a.id));
   }, []);
 
   useFocusEffect(
     useCallback(() => {
-      void loadCapsules();
-    }, [loadCapsules]),
+      void loadThreads();
+    }, [loadThreads]),
   );
 
   const refreshLists = useCallback(async () => {
-    await loadCapsules();
-  }, [loadCapsules]);
+    await loadThreads();
+  }, [loadThreads]);
 
   const exitSelectMode = useCallback(() => {
     setSelecting(false);
@@ -100,7 +112,7 @@ export function CapsuleListScreen() {
           ? firstName
             ? `Delete “${firstName}” and all messages? This cannot be undone.`
             : "This will remove the capsule, thread, and all messages. This cannot be undone."
-          : "This will remove the selected capsules, threads, and all messages. This cannot be undone.";
+          : "This will remove the selected chats and all messages. This cannot be undone.";
 
       Alert.alert(title, message, [
         { text: "Cancel", style: "cancel" },
@@ -127,25 +139,6 @@ export function CapsuleListScreen() {
     [exitSelectMode, refreshLists],
   );
 
-  const openAddCapsuleSheet = useCallback(async () => {
-    const { response } = popupManager.open(CapsuleFormModal);
-    const closeResult = await response;
-    if (
-      closeResult &&
-      typeof closeResult === "object" &&
-      "created" in closeResult &&
-      closeResult.created
-    ) {
-      const c = closeResult.created;
-      router.push({
-        pathname: "/thread/[id]",
-        params: { id: c.id, name: c.name },
-      } as unknown as Href);
-    }
-  }, [popupManager]);
-
-  const tint = systemBlueForScheme(scheme);
-
   useLayoutEffect(() => {
     navigation.setOptions({
       ...navigationChromeForScheme(scheme),
@@ -153,7 +146,7 @@ export function CapsuleListScreen() {
         ? selectedIds.length > 0
           ? String(selectedIds.length)
           : "Select"
-        : "Capsules",
+        : "Threads",
       headerLeftContainerStyle: selecting
         ? { paddingLeft: 16 }
         : undefined,
@@ -176,10 +169,10 @@ export function CapsuleListScreen() {
           <Pressable
             onPress={() => {
               if (selectedIds.length === 0) return;
-              const first = capsules.find((c) => c.id === selectedIds[0]);
+              const first = threads.find((d) => d.id === selectedIds[0]);
               confirmDeleteIds(
                 selectedIds,
-                selectedIds.length === 1 ? first?.name : undefined,
+                selectedIds.length === 1 ? first?.capsule.name : undefined,
               );
             }}
             hitSlop={12}
@@ -192,23 +185,13 @@ export function CapsuleListScreen() {
           >
             <Ionicons name="trash-outline" size={24} color="#ff3b30" />
           </Pressable>
-        ) : (
-          <Pressable
-            onPress={() => void openAddCapsuleSheet()}
-            hitSlop={12}
-            style={({ pressed }) => [pressed && { opacity: 0.55 }]}
-            accessibilityLabel="Add capsule"
-          >
-            <Ionicons name="add" size={28} color={tint} />
-          </Pressable>
-        ),
+        ) : undefined,
     });
   }, [
-    capsules,
     confirmDeleteIds,
+    threads,
     exitSelectMode,
     navigation,
-    openAddCapsuleSheet,
     scheme,
     selecting,
     selectedIds,
@@ -218,7 +201,7 @@ export function CapsuleListScreen() {
   return (
     <View style={[styles.screen, { backgroundColor: palette.background }]}>
       <FlatList
-        data={capsules}
+        data={threads}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.listContent}
         extraData={{ selecting, selectedIds }}
@@ -235,25 +218,20 @@ export function CapsuleListScreen() {
         )}
         renderItem={({ item }) => {
           const row = (
-            <CapsuleRow
-              capsule={item}
+            <ThreadRow
+              thread={item}
               palette={palette}
               selecting={selecting}
               selected={selectedIds.includes(item.id)}
               tint={tint}
               onPress={() => {
-                const sup = suppressNextRowPressRef.current;
-                if (sup && sup.id === item.id && Date.now() < sup.untilMs) {
-                  suppressNextRowPressRef.current = null;
-                  return;
-                }
                 if (selecting) {
                   toggleSelected(item.id);
                   return;
                 }
                 router.push({
-                  pathname: "/capsule/[id]",
-                  params: { id: item.id },
+                  pathname: "/thread/[id]",
+                  params: { id: item.id, name: item.capsule.name },
                 } as unknown as Href);
               }}
               onLongPress={
@@ -273,18 +251,8 @@ export function CapsuleListScreen() {
           return (
             <SwipeToDeleteRow
               openRegistryRef={openSwipeRef}
-              onEditPress={() => {
-                suppressNextRowPressRef.current = {
-                  id: item.id,
-                  untilMs: Date.now() + 800,
-                };
-                router.push({
-                  pathname: "/capsule/edit/[id]",
-                  params: { id: item.id },
-                } as unknown as Href);
-              }}
               onDeletePress={() =>
-                confirmDeleteIds([item.id], item.name)
+                confirmDeleteIds([item.id], item.capsule.name)
               }
             >
               {row}
@@ -296,8 +264,8 @@ export function CapsuleListScreen() {
   );
 }
 
-function CapsuleRow({
-  capsule,
+function ThreadRow({
+  thread,
   palette,
   selecting,
   selected,
@@ -305,15 +273,16 @@ function CapsuleRow({
   onPress,
   onLongPress,
 }: {
-  capsule: Capsule;
-  palette: CapsuleListRowPalette;
+  thread: Thread;
+  palette: ListPalette;
   selecting: boolean;
   selected: boolean;
   tint: string;
   onPress: () => void;
   onLongPress?: () => void;
 }) {
-  const description = capsule.description?.trim();
+  const { capsule } = thread;
+  const subtitle = formatLastMessageDate(thread.lastMessageAt);
   const hue = avatarHueFromId(capsule.id);
   const initials = initialsFromName(capsule.name);
 
@@ -349,14 +318,12 @@ function CapsuleRow({
         >
           {capsule.name}
         </Text>
-        {description ? (
-          <Text
-            style={[styles.subtitle, { color: palette.textSecondary }]}
-            numberOfLines={2}
-          >
-            {description}
-          </Text>
-        ) : null}
+        <Text
+          style={[styles.subtitle, { color: palette.textSecondary }]}
+          numberOfLines={1}
+        >
+          {subtitle}
+        </Text>
       </View>
     </Pressable>
   );

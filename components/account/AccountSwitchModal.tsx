@@ -1,7 +1,6 @@
-import { useInvalidate, useList, useUpdate } from "@refinedev/core";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -16,8 +15,8 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import type { Account } from "lib/models/account";
-import { RESOURCES } from "lib/refineDataProvider";
 import { systemBlueForScheme } from "lib/theme/appColors";
+import { accountsRepo } from "repositories";
 import { avatarHueFromId, initialsFromName } from "utils/avatar";
 
 const colors = {
@@ -45,22 +44,32 @@ export function AccountSwitchModal({ visible, onClose }: AccountSwitchModalProps
   const palette = scheme === "dark" ? colors.dark : colors.light;
   const blue = systemBlueForScheme(scheme);
 
-  const { result, query } = useList<Account>({
-    resource: RESOURCES.accounts,
-    pagination: { mode: "off" },
-  });
+  const [accountsRaw, setAccountsRaw] = useState<Account[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const accounts = useMemo(() => {
-    const rows = result.data ?? [];
-    return [...rows].sort((a, b) =>
+    return [...accountsRaw].sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
     );
-  }, [result.data]);
+  }, [accountsRaw]);
 
-  const { mutateAsync: updateAccount } = useUpdate<Account>({
-    resource: RESOURCES.accounts,
-  });
-  const invalidate = useInvalidate();
+  useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    void (async () => {
+      setLoading(true);
+      try {
+        const rows = await accountsRepo.list();
+        if (!cancelled) setAccountsRaw(rows);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
+
   const [switchingId, setSwitchingId] = useState<string | null>(null);
 
   const handleSelect = useCallback(
@@ -71,22 +80,9 @@ export function AccountSwitchModal({ visible, onClose }: AccountSwitchModalProps
       }
       setSwitchingId(account.id);
       try {
-        await updateAccount({
-          id: account.id,
-          values: { isActive: true },
-        });
-        await invalidate({
-          resource: RESOURCES.accounts,
-          invalidates: ["list"],
-        });
-        await invalidate({
-          resource: RESOURCES.capsules,
-          invalidates: ["list"],
-        });
-        await invalidate({
-          resource: RESOURCES.dialogs,
-          invalidates: ["list"],
-        });
+        await accountsRepo.patch(account.id, { isActive: true });
+        const rows = await accountsRepo.list();
+        setAccountsRaw(rows);
         onClose();
       } catch (e) {
         console.error("AccountSwitchModal switch failed", e);
@@ -94,7 +90,7 @@ export function AccountSwitchModal({ visible, onClose }: AccountSwitchModalProps
         setSwitchingId(null);
       }
     },
-    [invalidate, onClose, updateAccount],
+    [onClose],
   );
 
   const handleCreateNew = useCallback(() => {
@@ -102,7 +98,6 @@ export function AccountSwitchModal({ visible, onClose }: AccountSwitchModalProps
     router.push("/account/create" as any);
   }, [onClose]);
 
-  const loading = query.isLoading || query.isFetching;
 
   return (
     <Modal

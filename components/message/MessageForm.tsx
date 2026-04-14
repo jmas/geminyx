@@ -10,7 +10,7 @@ import {
   View,
 } from "react-native";
 import * as yup from "yup";
-import { logDialogMessage } from "utils/dialogMessageLog";
+import { logThreadMessage } from "utils/threadMessageLog";
 
 export type MessageFormPalette = {
   composerBarBg: string;
@@ -67,14 +67,14 @@ export function MessageForm({
       ) => {
         const text = values.body.trim();
         if (!text || disabled) {
-          logDialogMessage("composer.submit.skip", {
+          logThreadMessage("composer.submit.skip", {
             reason: !text ? "empty_body" : "disabled",
             rawLen: values.body.length,
             isPending,
           });
           return;
         }
-        logDialogMessage("composer.submit", {
+        logThreadMessage("composer.submit", {
           bodyChars: text.length,
           bodyUtf8Bytes: new TextEncoder().encode(text).length,
           isPending,
@@ -84,7 +84,7 @@ export function MessageForm({
         try {
           await onSubmitBody(text);
         } catch (e) {
-          logDialogMessage("composer.submit.error", {
+          logThreadMessage("composer.submit.error", {
             bodyChars: text.length,
             error: e instanceof Error ? e.message : String(e),
           });
@@ -113,7 +113,7 @@ export function MessageForm({
               <Pressable
                 disabled={!canHome}
                 onPress={() => {
-                  logDialogMessage("composer.home.press", {
+                  logThreadMessage("composer.home.press", {
                     isPending,
                     disabled,
                     asRefresh: requestHomeAsRefresh,

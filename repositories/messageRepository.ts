@@ -1,133 +1,111 @@
-import type { DialogMessage } from "lib/models/dialogMessage";
-import { SQLITE_META_MAX_BYTES, newId, utf8ByteLength } from "lib/sqlite/utils";
-import { BaseSqliteRepository } from "lib/sqlite/baseRepository";
+import type { ThreadMessage } from "lib/models/threadMessage";
+import type { MessageCreateVariables } from "lib/resources/messages";
+import {
+  SQLITE_META_MAX_BYTES,
+  base64ToUint8Array,
+  newId,
+  utf8ByteLength,
+  uint8ArrayToBase64,
+} from "lib/db/utils";
+import { AppBlob } from "lib/watermelon/models/Blob";
+import { Message as MessageModel } from "lib/watermelon/models/Message";
+import { Thread as ThreadModel } from "lib/watermelon/models/Thread";
+import { Q } from "@nozbe/watermelondb";
+import { getWatermelonDatabase } from "lib/watermelon/database";
+import { accountsRepo } from "repositories/accountRepository";
+import { threadsRepo } from "repositories/threadRepository";
+import { logThreadMessage } from "utils/threadMessageLog";
 
-export class MessageRepository extends BaseSqliteRepository {
-  private rowToMessage(r: {
-    id: string;
-    content_length: number;
-    body: string | null;
-    blob_id: string | null;
-    status: number | null;
-    meta: string | null;
-    sent_at: string;
-    is_outgoing: number;
-    request_path: string | null;
-  }): DialogMessage {
-    const msg: DialogMessage = {
-      id: r.id,
-      contentLength: r.content_length,
-      sentAt: r.sent_at,
-      isOutgoing: r.is_outgoing === 1,
-      requestPath: r.request_path?.trim() ?? "",
+export class MessageRepository {
+  private messages() {
+    return getWatermelonDatabase().get<MessageModel>("messages");
+  }
+
+  private threads() {
+    return getWatermelonDatabase().get<ThreadModel>("threads");
+  }
+
+  private blobs() {
+    return getWatermelonDatabase().get<AppBlob>("blobs");
+  }
+
+  private modelToMessage(m: MessageModel): ThreadMessage {
+    const msg: ThreadMessage = {
+      id: m.id,
+      contentLength: m.contentLength,
+      sentAt: m.sentAt,
+      isOutgoing: m.isOutgoing,
+      requestPath: m.requestPath?.trim() ?? "",
     };
-    const bodyText = r.body?.trim();
+    const bodyText = m.body?.trim();
     if (bodyText) msg.body = bodyText;
-    if (r.blob_id) msg.blobId = r.blob_id;
-    if (r.status != null) msg.status = r.status;
-    const meta = r.meta?.trim();
+    if (m.blobId) msg.blobId = m.blobId;
+    if (m.status != null) msg.status = m.status;
+    const meta = m.meta?.trim();
     if (meta) msg.meta = meta;
     return msg;
   }
 
-  async countForDialog(dialogId: string): Promise<number> {
-    const db = await this.db();
-    const row = await db.getFirstAsync<{ c: number }>(
-      `SELECT COUNT(*) AS c FROM messages WHERE dialog_id = ?`,
-      dialogId,
-    );
-    return row?.c ?? 0;
+  async countForThread(threadId: string): Promise<number> {
+    return this.messages()
+      .query(Q.where("thread_id", threadId))
+      .fetchCount();
   }
 
-  async listForDialog(dialogId: string): Promise<DialogMessage[]> {
-    const db = await this.db();
-    const rows = await db.getAllAsync<{
-      id: string;
-      content_length: number;
-      body: string | null;
-      blob_id: string | null;
-      status: number | null;
-      meta: string | null;
-      sent_at: string;
-      is_outgoing: number;
-      request_path: string | null;
-    }>(
-      `SELECT id, content_length, body, blob_id, status, meta, sent_at, is_outgoing, request_path FROM messages
-       WHERE dialog_id = ? ORDER BY sent_at ASC, id ASC`,
-      dialogId,
-    );
-    return rows.map((r) => this.rowToMessage(r));
+  async listForThread(threadId: string): Promise<ThreadMessage[]> {
+    const rows = await this.messages()
+      .query(
+        Q.where("thread_id", threadId),
+        Q.sortBy("sent_at", "asc"),
+        Q.sortBy("id", "asc"),
+      )
+      .fetch();
+    return rows.map((r) => this.modelToMessage(r));
   }
 
-  /** Last `limit` messages in chronological order (oldest of the window first). */
-  async listRecentForDialog(
-    dialogId: string,
+  async listRecentForThread(
+    threadId: string,
     limit: number,
-  ): Promise<DialogMessage[]> {
-    const db = await this.db();
-    const rows = await db.getAllAsync<{
-      id: string;
-      content_length: number;
-      body: string | null;
-      blob_id: string | null;
-      status: number | null;
-      meta: string | null;
-      sent_at: string;
-      is_outgoing: number;
-      request_path: string | null;
-    }>(
-      `SELECT id, content_length, body, blob_id, status, meta, sent_at, is_outgoing, request_path FROM (
-         SELECT id, content_length, body, blob_id, status, meta, sent_at, is_outgoing, request_path
-         FROM messages
-         WHERE dialog_id = ?
-         ORDER BY sent_at DESC, id DESC
-         LIMIT ?
-       ) ORDER BY sent_at ASC, id ASC`,
-      dialogId,
-      limit,
-    );
-    return rows.map((r) => this.rowToMessage(r));
+  ): Promise<ThreadMessage[]> {
+    const rows = await this.messages()
+      .query(
+        Q.where("thread_id", threadId),
+        Q.sortBy("sent_at", "desc"),
+        Q.sortBy("id", "desc"),
+        Q.take(limit),
+      )
+      .fetch();
+    return rows.reverse().map((r) => this.modelToMessage(r));
   }
 
-  async listBeforeCursorForDialog(
-    dialogId: string,
+  async listBeforeCursorForThread(
+    threadId: string,
     cursor: { sentAt: string; id: string },
     limit: number,
-  ): Promise<DialogMessage[]> {
-    const db = await this.db();
-    const rows = await db.getAllAsync<{
-      id: string;
-      content_length: number;
-      body: string | null;
-      blob_id: string | null;
-      status: number | null;
-      meta: string | null;
-      sent_at: string;
-      is_outgoing: number;
-      request_path: string | null;
-    }>(
-      `SELECT id, content_length, body, blob_id, status, meta, sent_at, is_outgoing, request_path FROM messages
-       WHERE dialog_id = ?
-         AND (
-           sent_at < ?
-           OR (sent_at = ? AND id < ?)
-         )
-       ORDER BY sent_at DESC, id DESC
-       LIMIT ?`,
-      dialogId,
-      cursor.sentAt,
-      cursor.sentAt,
-      cursor.id,
-      limit,
-    );
-    return rows.reverse().map((r) => this.rowToMessage(r));
+  ): Promise<ThreadMessage[]> {
+    const rows = await this.messages()
+      .query(
+        Q.where("thread_id", threadId),
+        Q.or(
+          Q.where("sent_at", Q.lt(cursor.sentAt)),
+          Q.and(
+            Q.where("sent_at", cursor.sentAt),
+            Q.where("id", Q.lt(cursor.id)),
+          ),
+        ),
+        Q.sortBy("sent_at", "desc"),
+        Q.sortBy("id", "desc"),
+        Q.take(limit),
+      )
+      .fetch();
+    return rows.reverse().map((r) => this.modelToMessage(r));
   }
 
   async insert(
-    dialogId: string,
-    message: DialogMessage,
+    threadId: string,
+    message: ThreadMessage,
     blobPayload?: Uint8Array | null,
-  ): Promise<DialogMessage> {
+  ): Promise<ThreadMessage> {
     if (
       message.meta !== undefined &&
       utf8ByteLength(message.meta) > SQLITE_META_MAX_BYTES
@@ -161,43 +139,94 @@ export class MessageRepository extends BaseSqliteRepository {
         ? utf8ByteLength(bodyText)
         : message.contentLength;
 
-    const db = await this.db();
-    await db.withTransactionAsync(async () => {
+    const db = getWatermelonDatabase();
+    await db.write(async () => {
       if (blobPayload != null && blobPayload.byteLength > 0 && blobId) {
-        await db.runAsync(
-          `INSERT INTO blobs (id, body) VALUES (?, ?)`,
-          blobId,
-          blobPayload,
-        );
+        const b64 = uint8ArrayToBase64(blobPayload);
+        await this.blobs().create((rec) => {
+          rec._raw.id = blobId!;
+          rec.bodyBase64 = b64;
+        });
       }
-      await db.runAsync(
-        `INSERT INTO messages (id, dialog_id, content_length, body, blob_id, status, meta, sent_at, is_outgoing, request_path)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        message.id,
-        dialogId,
-        contentLengthForRow,
-        bodyText,
-        blobId,
-        message.status ?? null,
-        message.meta?.trim() ? message.meta.trim() : null,
-        message.sentAt,
-        message.isOutgoing ? 1 : 0,
-        message.requestPath?.trim() ?? "",
-      );
-      await db.runAsync(
-        `UPDATE dialogs SET message_id = ?, last_message_at = ? WHERE id = ?`,
-        message.id,
-        message.sentAt,
-        dialogId,
-      );
+      await this.messages().create((rec) => {
+        rec._raw.id = message.id;
+        rec.threadId = threadId;
+        rec.contentLength = contentLengthForRow;
+        rec.body = bodyText ?? undefined;
+        rec.blobId = blobId ?? undefined;
+        rec.status = message.status ?? undefined;
+        rec.meta = message.meta?.trim() ? message.meta.trim() : undefined;
+        rec.sentAt = message.sentAt;
+        rec.isOutgoing = message.isOutgoing;
+        rec.requestPath = message.requestPath?.trim() ?? "";
+      });
+      const th = await this.threads().find(threadId);
+      await th.update((d) => {
+        d.messageId = message.id;
+        d.lastMessageAt = message.sentAt;
+      });
     });
 
-    const out: DialogMessage = { ...message, contentLength: contentLengthForRow };
+    const out: ThreadMessage = { ...message, contentLength: contentLengthForRow };
     if (bodyText != null) out.body = bodyText;
     else delete out.body;
     if (blobId != null) out.blobId = blobId;
     else delete out.blobId;
     return out;
   }
-}
 
+  async createFromVariables(v: MessageCreateVariables): Promise<ThreadMessage> {
+    const accountId = (await accountsRepo.getActive())?.id;
+    if (!accountId) {
+      throw { message: "No active account", statusCode: 400 };
+    }
+    const d = await threadsRepo.getByIdForAccount(accountId, v.thread_id);
+    if (!d) {
+      throw { message: "Thread not found", statusCode: 404 };
+    }
+
+    logThreadMessage("sqlite.message.create.begin", {
+      threadId: v.thread_id,
+      id: v.id,
+      isOutgoing: v.isOutgoing,
+      sentAt: v.sentAt,
+      contentLength: v.contentLength,
+      hasBody: v.body != null && v.body.length > 0,
+      bodyChars: v.body?.length ?? 0,
+      status: v.status,
+      metaLen: v.meta?.length ?? 0,
+      hasBlobId: Boolean(v.blobId),
+      hasBlobBodyBase64: Boolean(v.blobBodyBase64?.length),
+      requestPathLen: v.requestPath?.length ?? 0,
+    });
+    const message: ThreadMessage = {
+      id: v.id,
+      contentLength: v.contentLength,
+      sentAt: v.sentAt,
+      isOutgoing: v.isOutgoing,
+      requestPath: v.requestPath?.trim() ?? "",
+      ...(v.body !== undefined && v.body.length > 0 ? { body: v.body } : {}),
+      ...(v.blobId ? { blobId: v.blobId } : {}),
+      ...(v.status !== undefined ? { status: v.status } : {}),
+      ...(v.meta !== undefined && v.meta.trim().length > 0
+        ? { meta: v.meta.trim() }
+        : {}),
+    };
+    const blobPayload =
+      v.blobBodyBase64 != null && v.blobBodyBase64.length > 0
+        ? base64ToUint8Array(v.blobBodyBase64)
+        : undefined;
+    const saved = await this.insert(v.thread_id, message, blobPayload);
+    logThreadMessage("sqlite.message.create.done", {
+      threadId: v.thread_id,
+      id: saved.id,
+      isOutgoing: saved.isOutgoing,
+      sentAt: saved.sentAt,
+      contentLength: saved.contentLength,
+      hasBody: saved.body != null && saved.body.length > 0,
+      status: saved.status,
+      blobId: saved.blobId,
+    });
+    return saved;
+  }
+}

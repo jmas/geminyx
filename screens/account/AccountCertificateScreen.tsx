@@ -1,4 +1,4 @@
-import { useList, useUpdate } from "@refinedev/core";
+import { useFocusEffect } from "@react-navigation/native";
 import * as DocumentPicker from "expo-document-picker";
 import { readAsStringAsync } from "expo-file-system/legacy";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -15,8 +15,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Account } from "lib/models/account";
-import { RESOURCES } from "lib/refineDataProvider";
 import { appColors } from "lib/theme/appColors";
+import { accountsRepo } from "repositories";
 
 const colors = {
   light: {
@@ -50,19 +50,25 @@ export function AccountCertificateScreen() {
   const insets = useSafeAreaInsets();
   const palette = scheme === "dark" ? colors.dark : colors.light;
 
-  const { result, query } = useList<Account>({
-    resource: RESOURCES.accounts,
-    filters: [{ field: "is_active", operator: "eq", value: true }],
-    pagination: { mode: "off" },
-  });
+  const [activeAccount, setActiveAccount] = useState<Account | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
 
-  const activeAccount = result.data?.[0];
-  const profileLoading = query.isLoading || query.isFetching;
+  const loadActive = useCallback(async () => {
+    setProfileLoading(true);
+    try {
+      const a = await accountsRepo.getActive();
+      setActiveAccount(a ?? null);
+    } finally {
+      setProfileLoading(false);
+    }
+  }, []);
 
-  const { mutateAsync: updateAccount, mutation } = useUpdate<Account>({
-    resource: RESOURCES.accounts,
-  });
-  const busy = mutation.isPending;
+  useFocusEffect(
+    useCallback(() => {
+      void loadActive();
+    }, [loadActive]),
+  );
 
   const [passphraseDraft, setPassphraseDraft] = useState("");
   useEffect(() => {
@@ -91,11 +97,15 @@ export function AccountCertificateScreen() {
         return;
       }
       const base64 = await readAsStringAsync(uri, { encoding: "base64" });
-      await updateAccount({
-        id: activeAccount.id,
-        values: { geminiClientP12Base64: base64 },
-      });
-      await query.refetch();
+      setBusy(true);
+      try {
+        await accountsRepo.patch(activeAccount.id, {
+          geminiClientP12Base64: base64,
+        });
+        await loadActive();
+      } finally {
+        setBusy(false);
+      }
       Alert.alert(
         "Certificate",
         "PKCS#12 saved. It will be used for Gemini requests from this account.",
@@ -104,21 +114,23 @@ export function AccountCertificateScreen() {
       console.error("handleImportPkcs12", e);
       Alert.alert("Certificate", e instanceof Error ? e.message : String(e));
     }
-  }, [activeAccount, query, updateAccount]);
+  }, [activeAccount, loadActive]);
 
   const handleSavePassphrase = useCallback(async () => {
     if (!activeAccount) return;
     try {
-      await updateAccount({
-        id: activeAccount.id,
-        values: { geminiClientP12Passphrase: passphraseDraft },
+      setBusy(true);
+      await accountsRepo.patch(activeAccount.id, {
+        geminiClientP12Passphrase: passphraseDraft,
       });
-      await query.refetch();
+      await loadActive();
       Alert.alert("Certificate", "Passphrase saved.");
     } catch (e) {
       Alert.alert("Certificate", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
     }
-  }, [activeAccount, passphraseDraft, query, updateAccount]);
+  }, [activeAccount, passphraseDraft, loadActive]);
 
   const handleClearCert = useCallback(() => {
     if (!activeAccount) return;
@@ -132,26 +144,26 @@ export function AccountCertificateScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await updateAccount({
-                id: activeAccount.id,
-                values: {
-                  geminiClientP12Base64: null,
-                  geminiClientP12Passphrase: null,
-                },
+              setBusy(true);
+              await accountsRepo.patch(activeAccount.id, {
+                geminiClientP12Base64: null,
+                geminiClientP12Passphrase: null,
               });
               setPassphraseDraft("");
-              await query.refetch();
+              await loadActive();
             } catch (e) {
               Alert.alert(
                 "Certificate",
                 e instanceof Error ? e.message : String(e),
               );
+            } finally {
+              setBusy(false);
             }
           },
         },
       ],
     );
-  }, [activeAccount, query, updateAccount]);
+  }, [activeAccount, loadActive]);
 
   return (
     <View style={[styles.screen, { backgroundColor: palette.background }]}>

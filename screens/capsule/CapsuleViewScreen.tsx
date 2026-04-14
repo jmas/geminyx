@@ -1,7 +1,7 @@
-import { useDelete, useInvalidate, useOne } from "@refinedev/core";
+import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
-import { useCallback, useLayoutEffect, useMemo } from "react";
+import { useCallback, useLayoutEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -17,13 +17,13 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
 import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import type { Capsule } from "lib/models/capsule";
-import { RESOURCES } from "lib/refineDataProvider";
 import {
   appColors,
   navigationChromeForScheme,
   rootScreenBackgroundForScheme,
   systemBlueForScheme,
 } from "lib/theme/appColors";
+import { accountsRepo, capsulesRepo } from "repositories";
 import { firstParam } from "utils/searchParams";
 
 export function CapsuleViewScreen() {
@@ -40,17 +40,38 @@ export function CapsuleViewScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const capsuleId = firstParam(params.id) ?? "";
 
-  const invalidate = useInvalidate();
-  const { mutateAsync: removeCapsule } = useDelete();
+  const [capsule, setCapsule] = useState<Capsule | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  const { result: capsule, query } = useOne<Capsule>({
-    resource: RESOURCES.capsules,
-    id: capsuleId,
-    queryOptions: { enabled: !!capsuleId },
-  });
+  const loadCapsule = useCallback(async () => {
+    if (!capsuleId) {
+      setCapsule(null);
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const active = await accountsRepo.getActive();
+      if (!active?.id) {
+        setCapsule(null);
+        return;
+      }
+      const c = await capsulesRepo.getByIdForAccount(active.id, capsuleId);
+      setCapsule(c);
+    } catch {
+      setCapsule(null);
+    } finally {
+      setLoading(false);
+    }
+  }, [capsuleId]);
 
-  const loading = query.isLoading || query.isFetching;
-  const notFound = !loading && (!capsule || query.isError);
+  useFocusEffect(
+    useCallback(() => {
+      void loadCapsule();
+    }, [loadCapsule]),
+  );
+
+  const notFound = !loading && !capsule;
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -60,14 +81,13 @@ export function CapsuleViewScreen() {
   }, [navigation, scheme]);
 
   const refreshLists = useCallback(async () => {
-    await invalidate({ resource: RESOURCES.capsules, invalidates: ["list"] });
-    await invalidate({ resource: RESOURCES.dialogs, invalidates: ["list"] });
-  }, [invalidate]);
+    await loadCapsule();
+  }, [loadCapsule]);
 
-  const onOpenDialog = useCallback(() => {
+  const onOpenThread = useCallback(() => {
     if (!capsule) return;
     router.push({
-      pathname: "/dialog/[id]",
+      pathname: "/thread/[id]",
       params: { id: capsule.id, name: capsule.name },
     } as unknown as Href);
   }, [capsule, router]);
@@ -85,12 +105,9 @@ export function CapsuleViewScreen() {
           onPress: () => {
             void (async () => {
               try {
-                await removeCapsule({
-                  resource: RESOURCES.capsules,
-                  id: capsule.id,
-                });
+                await capsulesRepo.deleteCascade(capsule.id);
                 await refreshLists();
-                router.replace("/(tabs)/dialogs" as Href);
+                router.replace("/(tabs)/threads" as Href);
               } catch (e) {
                 console.error(e);
                 Alert.alert("Could not delete", "Please try again.");
@@ -100,7 +117,7 @@ export function CapsuleViewScreen() {
         },
       ],
     );
-  }, [capsule, refreshLists, removeCapsule, router]);
+  }, [capsule, refreshLists, router]);
 
   const onEdit = useCallback(() => {
     if (!capsule) return;
@@ -168,7 +185,7 @@ export function CapsuleViewScreen() {
       </View>
 
       <Pressable
-        onPress={onOpenDialog}
+        onPress={onOpenThread}
         style={({ pressed }) => [
           styles.primaryBtn,
           {
@@ -177,10 +194,10 @@ export function CapsuleViewScreen() {
           },
         ]}
         accessibilityRole="button"
-        accessibilityLabel="Open dialog"
+        accessibilityLabel="Open thread"
       >
         <Ionicons name="chatbubbles-outline" size={22} color="#ffffff" />
-        <Text style={styles.primaryBtnLabel}>Dialog</Text>
+        <Text style={styles.primaryBtnLabel}>Thread</Text>
       </Pressable>
 
       <Pressable

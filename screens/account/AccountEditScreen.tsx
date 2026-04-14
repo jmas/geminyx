@@ -1,12 +1,12 @@
-import { useDelete, useInvalidate, useList, useUpdate } from "@refinedev/core";
+import { useFocusEffect } from "@react-navigation/native";
 import type { FormikHelpers } from "formik";
 import { router } from "expo-router";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Alert, Pressable, StyleSheet, Text, useColorScheme, View } from "react-native";
 import { AccountForm, type AccountFormPalette, type AccountFormValues } from "components/account/AccountForm";
 import type { Account } from "lib/models/account";
-import { RESOURCES } from "lib/refineDataProvider";
 import { appColors, systemBlueForScheme } from "lib/theme/appColors";
+import { accountsRepo } from "repositories";
 
 const colors = {
   light: {
@@ -52,19 +52,25 @@ export function AccountEditScreen() {
     [palette, scheme],
   );
 
-  const { result, query } = useList<Account>({
-    resource: RESOURCES.accounts,
-    filters: [{ field: "is_active", operator: "eq", value: true }],
-    pagination: { mode: "off" },
-  });
-  const activeAccount = result.data?.[0];
+  const [activeAccount, setActiveAccount] = useState<Account | null>(null);
+  const [queryLoading, setQueryLoading] = useState(true);
+  const [deletePending, setDeletePending] = useState(false);
 
-  const { mutateAsync: updateAccount } = useUpdate<Account>({
-    resource: RESOURCES.accounts,
-  });
+  const loadActive = useCallback(async () => {
+    setQueryLoading(true);
+    try {
+      const a = await accountsRepo.getActive();
+      setActiveAccount(a ?? null);
+    } finally {
+      setQueryLoading(false);
+    }
+  }, []);
 
-  const invalidate = useInvalidate();
-  const { mutateAsync: deleteAccount, mutation: deleteMutation } = useDelete<Account>();
+  useFocusEffect(
+    useCallback(() => {
+      void loadActive();
+    }, [loadActive]),
+  );
 
   const initialValues: AccountFormValues | undefined = useMemo(() => {
     if (!activeAccount) return undefined;
@@ -88,22 +94,8 @@ export function AccountEditScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              await deleteAccount({
-                resource: RESOURCES.accounts,
-                id: activeAccount.id,
-              });
-              await invalidate({
-                resource: RESOURCES.accounts,
-                invalidates: ["list"],
-              });
-              await invalidate({
-                resource: RESOURCES.capsules,
-                invalidates: ["list"],
-              });
-              await invalidate({
-                resource: RESOURCES.dialogs,
-                invalidates: ["list"],
-              });
+              setDeletePending(true);
+              await accountsRepo.deleteById(activeAccount.id);
               router.back();
             } catch (e) {
               console.error("AccountEditScreen delete failed", e);
@@ -111,12 +103,14 @@ export function AccountEditScreen() {
                 "Could not delete account",
                 e instanceof Error ? e.message : String(e),
               );
+            } finally {
+              setDeletePending(false);
             }
           },
         },
       ],
     );
-  }, [activeAccount, deleteAccount, invalidate]);
+  }, [activeAccount]);
 
   const handleSubmit = useCallback(
     async (
@@ -125,16 +119,12 @@ export function AccountEditScreen() {
     ) => {
       if (!activeAccount) return;
       try {
-        await updateAccount({
-          id: activeAccount.id,
-          values: {
-            name: values.name.trim(),
-            email: values.email.trim() || null,
-            avatarUrl: values.avatarUrl.trim() || null,
-            capsuleUrl: values.capsuleUrl.trim() || null,
-          },
+        await accountsRepo.patch(activeAccount.id, {
+          name: values.name.trim(),
+          email: values.email.trim() || undefined,
+          avatarUrl: values.avatarUrl.trim() || undefined,
+          capsuleUrl: values.capsuleUrl.trim() || undefined,
         });
-        await query.refetch();
         router.back();
       } catch (e) {
         console.error("AccountEditScreen update failed", e);
@@ -146,10 +136,10 @@ export function AccountEditScreen() {
         setSubmitting(false);
       }
     },
-    [activeAccount, query, updateAccount],
+    [activeAccount],
   );
 
-  if (query.isLoading || query.isFetching) {
+  if (queryLoading) {
     return (
       <View style={[styles.screen, { backgroundColor: palette.background }]}>
         <Text style={[styles.loadingText, { color: palette.textSecondary }]}>
@@ -177,14 +167,14 @@ export function AccountEditScreen() {
         footerExtra={
           <Pressable
             onPress={handleDelete}
-            disabled={deleteMutation.isPending}
+            disabled={deletePending}
             style={({ pressed }) => [
               styles.deleteBtn,
               {
                 borderColor: palette.error,
-                opacity: deleteMutation.isPending ? 0.6 : 1,
+                opacity: deletePending ? 0.6 : 1,
               },
-              pressed && !deleteMutation.isPending
+              pressed && !deletePending
                 ? {
                     backgroundColor:
                       scheme === "dark"

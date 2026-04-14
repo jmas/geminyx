@@ -1,11 +1,12 @@
-import { Refine } from "@refinedev/core";
+import { DatabaseProvider } from "@nozbe/watermelondb/react";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { JetBrainsMono_400Regular, useFonts } from "@expo-google-fonts/jetbrains-mono";
-import { refineDataProvider, RESOURCES } from "lib/refineDataProvider";
+import { isAppDatabaseReady } from "lib/appDatabaseReady";
+import { initializeDatabase } from "lib/databaseSetup";
 import { registerLocalDatabaseEraseHandler } from "lib/localDatabaseErase";
-import { initializeDatabase, isAppDatabaseReady } from "lib/sqlite";
+import { getWatermelonDatabase } from "lib/watermelon/database";
 import { useCallback, useEffect, useState } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
@@ -97,53 +98,12 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Refine
-        dataProvider={refineDataProvider}
-        resources={[
-          {
-            name: RESOURCES.accounts,
-            meta: {
-              dataProviderName: "default",
-              description:
-                "App accounts; is_active marks the profile shown in Settings",
-            },
-          },
-          {
-            name: RESOURCES.capsules,
-            meta: {
-              dataProviderName: "default",
-              description:
-                "Capsules; each open dialog links one capsule via dialogs.capsule_id",
-            },
-          },
-          {
-            name: RESOURCES.dialogs,
-            meta: {
-              dataProviderName: "default",
-              parent: RESOURCES.capsules,
-              foreignKey: "capsule_id",
-              description:
-                "Per-capsule dialog history row: last message pointer and timestamp",
-            },
-          },
-          {
-            name: RESOURCES.messages,
-            meta: {
-              dataProviderName: "default",
-              parent: RESOURCES.dialogs,
-              foreignKey: "dialog_id",
-            },
-          },
-        ]}
-        options={{
-          disableTelemetry: true,
-        }}
-      >
+      <DatabaseProvider database={getWatermelonDatabase()}>
         <PopupProvider>
           <Stack>
             <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
             <Stack.Screen
-              name="dialog/[id]"
+              name="thread/[id]"
               options={{
                 headerBackTitle: "Back",
               }}
@@ -185,7 +145,7 @@ export default function RootLayout() {
           </Stack>
           <StatusBar style="auto" />
         </PopupProvider>
-      </Refine>
+      </DatabaseProvider>
     </GestureHandlerRootView>
   );
 }

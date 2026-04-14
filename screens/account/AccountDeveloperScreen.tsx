@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { notifyLocalDatabaseErased } from "lib/localDatabaseErase";
-import { resetLocalDatabase } from "lib/sqlite";
+import { resetLocalDatabase } from "lib/databaseSetup";
 import { appColors } from "lib/theme/appColors";
 
 const colors = {
@@ -43,7 +43,7 @@ export function AccountDeveloperScreen() {
   const confirmEraseLocalData = useCallback(() => {
     Alert.alert(
       "Erase local database?",
-      "All accounts, capsules, dialogs, and messages on this device will be removed. You will return to onboarding.",
+      "All accounts, capsules, threads, and messages on this device will be removed. You will return to onboarding.",
       [
         { text: "Cancel", style: "cancel" },
         {

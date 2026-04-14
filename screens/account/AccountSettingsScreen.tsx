@@ -1,7 +1,7 @@
 import { router } from "expo-router";
-import { useList } from "@refinedev/core";
+import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AccountSwitchModal } from "components/account/AccountSwitchModal";
 import {
   Image,
@@ -14,8 +14,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { Account } from "lib/models/account";
-import { RESOURCES } from "lib/refineDataProvider";
 import { appColors, systemBlueForScheme } from "lib/theme/appColors";
+import { accountsRepo } from "repositories";
 import { avatarHueFromId, initialsFromName } from "utils/avatar";
 
 const colors = {
@@ -46,20 +46,24 @@ export function AccountSettingsScreen() {
   const insets = useSafeAreaInsets();
   const palette = scheme === "dark" ? colors.dark : colors.light;
 
-  const { result, query } = useList<Account>({
-    resource: RESOURCES.accounts,
-    filters: [
-      {
-        field: "is_active",
-        operator: "eq",
-        value: true,
-      },
-    ],
-    pagination: { mode: "off" },
-  });
+  const [activeAccount, setActiveAccount] = useState<Account | null>(null);
+  const [profileLoading, setProfileLoading] = useState(true);
 
-  const activeAccount = result.data?.[0];
-  const profileLoading = query.isLoading || query.isFetching;
+  const loadActiveAccount = useCallback(async () => {
+    setProfileLoading(true);
+    try {
+      const a = await accountsRepo.getActive();
+      setActiveAccount(a ?? null);
+    } finally {
+      setProfileLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadActiveAccount();
+    }, [loadActiveAccount]),
+  );
   const certStatus = useMemo(() => {
     if (profileLoading) return "";
     if (!activeAccount) return "No active account";

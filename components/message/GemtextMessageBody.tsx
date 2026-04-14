@@ -773,7 +773,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.12)",
   },
   /**
-   * Nested in the dialog `ScrollView`, horizontal `ScrollView` defaults to `flexGrow: 1`
+   * Nested in the thread `ScrollView`, horizontal `ScrollView` defaults to `flexGrow: 1`
    * and expands to the viewport height — empty space inside the bubble and timestamp
    * pushed off-screen. Shrink-wrap vertically instead.
    */

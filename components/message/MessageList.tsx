@@ -22,7 +22,7 @@ import {
 } from "react-native";
 import { avatarHueFromId, initialsFromName } from "utils/avatar";
 import { usePopupManager } from "react-popup-manager";
-import type { DialogMessage } from "lib/models/dialogMessage";
+import type { ThreadMessage } from "lib/models/threadMessage";
 import { MessageBodyFullModal } from "components/message/MessageBodyFullModal";
 import {
   GemtextMessageBody,
@@ -61,9 +61,9 @@ export type MessageListEmptyCapsule = {
 };
 
 export type MessageListProps = {
-  /** When this changes (e.g. dialog id), scroll/pagination refs reset. */
+  /** When this changes (e.g. thread id), scroll/pagination refs reset. */
   resetScrollKey: string;
-  messages: DialogMessage[];
+  messages: ThreadMessage[];
   loadingInitial: boolean;
   loadingOlder: boolean;
   palette: MessageListPalette;
@@ -80,10 +80,10 @@ export type MessageListProps = {
   /** Centered Telegram-style card when there are no messages yet. */
   emptyCapsule?: MessageListEmptyCapsule;
   /** Long-press context menu: Revisit / Revisit home (native UIMenu on iOS). */
-  onMessageRefetch?: (message: DialogMessage) => void;
+  onMessageRefetch?: (message: ThreadMessage) => void;
   /** Labels and SF Symbol for the context menu row (per message). */
   getMessageRefetchMenuAction?: (
-    message: DialogMessage,
+    message: ThreadMessage,
   ) => { title: string; systemIcon: string };
 };
 
@@ -213,7 +213,7 @@ function MessageBubble({
   onMessageRefetch,
   getMessageRefetchMenuAction,
 }: {
-  message: DialogMessage;
+  message: ThreadMessage;
   palette: MessageListPalette;
   incomingGemtextChrome: IncomingGemtextChrome;
   showTailSpacing: boolean;
@@ -221,9 +221,9 @@ function MessageBubble({
   onGemtextLink?: (action: GemtextLinkAction, linkLabel: string) => void;
   geminiLinksDisabled?: boolean;
   onViewFull: (ctx: ViewFullMessageContext) => void;
-  onMessageRefetch?: (message: DialogMessage) => void;
+  onMessageRefetch?: (message: ThreadMessage) => void;
   getMessageRefetchMenuAction?: (
-    message: DialogMessage,
+    message: ThreadMessage,
   ) => { title: string; systemIcon: string };
 }) {
   const outgoing = message.isOutgoing;

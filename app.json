@@ -41,7 +41,26 @@
           }
         }
       ],
-      "expo-sqlite"
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "extraPods": [
+              {
+                "name": "simdjson",
+                "path": "../node_modules/@nozbe/simdjson",
+                "modular_headers": true,
+                "configurations": ["Debug", "Release"]
+              }
+            ]
+          },
+          "android": {
+            "packagingOptions": {
+              "pickFirst": ["**/libc++_shared.so"]
+            }
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

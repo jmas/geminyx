@@ -1,7 +1,7 @@
-import { useInvalidate, useOne, useUpdate } from "@refinedev/core";
+import { useFocusEffect } from "@react-navigation/native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
-import { useCallback, useLayoutEffect, useMemo } from "react";
+import { useCallback, useLayoutEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -20,13 +20,13 @@ import {
 } from "components/capsule/CapsuleForm";
 import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import type { Capsule } from "lib/models/capsule";
-import { RESOURCES } from "lib/refineDataProvider";
 import {
   appColors,
   navigationChromeForScheme,
   rootScreenBackgroundForScheme,
   systemBlueForScheme,
 } from "lib/theme/appColors";
+import { accountsRepo, capsulesRepo } from "repositories";
 import { firstParam } from "utils/searchParams";
 
 export function CapsuleEditScreen() {
@@ -42,22 +42,37 @@ export function CapsuleEditScreen() {
   const params = useLocalSearchParams<{ id: string }>();
   const capsuleId = firstParam(params.id) ?? "";
 
-  const invalidate = useInvalidate();
-  const { mutateAsync: updateCapsule, mutation: updateMutation } = useUpdate({
-    resource: RESOURCES.capsules,
-    mutationOptions: {
-      onSuccess: async () => {
-        await invalidate({ resource: RESOURCES.capsules, invalidates: ["list"] });
-        await invalidate({ resource: RESOURCES.dialogs, invalidates: ["list"] });
-      },
-    },
-  });
+  const [capsule, setCapsule] = useState<Capsule | null>(null);
+  const [queryLoading, setQueryLoading] = useState(true);
+  const [savePending, setSavePending] = useState(false);
 
-  const { result: capsule, query } = useOne<Capsule>({
-    resource: RESOURCES.capsules,
-    id: capsuleId,
-    queryOptions: { enabled: !!capsuleId },
-  });
+  const loadCapsule = useCallback(async () => {
+    if (!capsuleId) {
+      setCapsule(null);
+      setQueryLoading(false);
+      return;
+    }
+    setQueryLoading(true);
+    try {
+      const active = await accountsRepo.getActive();
+      if (!active?.id) {
+        setCapsule(null);
+        return;
+      }
+      const c = await capsulesRepo.getByIdForAccount(active.id, capsuleId);
+      setCapsule(c);
+    } catch {
+      setCapsule(null);
+    } finally {
+      setQueryLoading(false);
+    }
+  }, [capsuleId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadCapsule();
+    }, [loadCapsule]),
+  );
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -96,14 +111,12 @@ export function CapsuleEditScreen() {
       { setSubmitting }: FormikHelpers<CapsuleFormValues>,
     ) => {
       try {
-        await updateCapsule({
-          id: capsuleId,
-          values: {
-            name: values.name.trim(),
-            avatarUrl: values.avatarUrl.trim(),
-            url: values.url.trim(),
-            description: values.description.trim(),
-          },
+        setSavePending(true);
+        await capsulesRepo.patch(capsuleId, {
+          name: values.name.trim(),
+          avatarUrl: values.avatarUrl.trim(),
+          url: values.url.trim(),
+          description: values.description.trim(),
         });
         router.replace({ pathname: "/capsule/[id]", params: { id: capsuleId } } as unknown as Href);
       } catch (e) {
@@ -113,10 +126,11 @@ export function CapsuleEditScreen() {
           e instanceof Error ? e.message : String(e),
         );
       } finally {
+        setSavePending(false);
         setSubmitting(false);
       }
     },
-    [capsuleId, router, updateCapsule],
+    [capsuleId, router],
   );
 
   if (!capsuleId) {
@@ -127,7 +141,7 @@ export function CapsuleEditScreen() {
     );
   }
 
-  if (query.isLoading || query.isFetching) {
+  if (queryLoading) {
     return (
       <View style={[styles.centered, { backgroundColor: bg }]}>
         <ActivityIndicator />
@@ -135,7 +149,7 @@ export function CapsuleEditScreen() {
     );
   }
 
-  if (!capsule || query.isError) {
+  if (!capsule) {
     return (
       <View style={[styles.centered, { backgroundColor: bg }]}>
         <Text style={{ color: titleColor }}>Capsule not found.</Text>
@@ -148,7 +162,7 @@ export function CapsuleEditScreen() {
       <CapsuleForm
         palette={palette}
         scheme={scheme}
-        isPending={updateMutation.isPending}
+        isPending={savePending}
         initialValues={initialValues}
         submitLabel="Save"
         onCancel={onCancel}
