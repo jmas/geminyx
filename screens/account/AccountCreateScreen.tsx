@@ -1,7 +1,7 @@
 import type { FormikHelpers } from "formik";
 import { useCallback, useMemo } from "react";
 import {
-  Alert,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -14,8 +14,9 @@ import {
   type AccountFormPalette,
   type AccountFormValues,
 } from "components/account/AccountForm";
-import { appColors, systemBlueForScheme } from "lib/theme/appColors";
+import { appColors, iosAccountFormPalette, systemBlueForScheme } from "lib/theme/appColors";
 import { accountsRepo } from "repositories";
+import { alertError } from "utils/error";
 
 const colors = {
   light: {
@@ -59,8 +60,11 @@ export function AccountCreateScreen({
   const insets = useSafeAreaInsets();
   const palette = scheme === "dark" ? colors.dark : colors.light;
 
-  const formPalette: AccountFormPalette = useMemo(
-    () => ({
+  const formPalette: AccountFormPalette = useMemo(() => {
+    if (Platform.OS === "ios") {
+      return iosAccountFormPalette();
+    }
+    return {
       background: palette.background,
       textPrimary: palette.textPrimary,
       textSecondary: palette.textSecondary,
@@ -72,9 +76,8 @@ export function AccountCreateScreen({
       error: palette.error,
       primaryLabel: "#ffffff",
       primaryButtonBg: systemBlueForScheme(scheme),
-    }),
-    [palette, scheme],
-  );
+    };
+  }, [palette, scheme]);
 
   const handleSubmit = useCallback(
     async (
@@ -92,10 +95,7 @@ export function AccountCreateScreen({
         await onSuccess();
       } catch (e) {
         console.error("AccountCreateScreen create failed", e);
-        Alert.alert(
-          "Could not create account",
-          e instanceof Error ? e.message : String(e),
-        );
+        alertError(e, "Could not create account.", "Could not create account");
       } finally {
         setSubmitting(false);
       }

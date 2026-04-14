@@ -14,6 +14,7 @@ import {
   Text,
   View,
   useWindowDimensions,
+  type ColorValue,
 } from "react-native";
 import type ViewShot from "react-native-view-shot";
 import { resolveGeminiLinkHref } from "lib/models/gemini";
@@ -63,6 +64,15 @@ const HEADING_MARGIN_TOP_AFTER_PRE = 10;
 /** Gap after heading + `HEADING_MARGIN_BOTTOM` before next block’s top margin. */
 const GAP_AFTER_HEADING = 6;
 
+/** ANSI parsing only accepts string colors; `PlatformColor` is not representable as hex. */
+function ansiColorSource(
+  c: ColorValue,
+  incomingChrome: IncomingGemtextChrome,
+): string {
+  if (typeof c === "string") return c;
+  return incomingChrome === "dark" ? "#f2f2f7" : "#000000";
+}
+
 function messageBodyMinWidth(windowWidth: number): number {
   const contentInner = windowWidth - MESSAGE_LIST_CONTENT_PADDING_H * 2;
   const maxRow = contentInner * ROW_MAX_WIDTH_FRAC;
@@ -80,9 +90,9 @@ export type CodeBlockTheme = "bubble" | "terminal";
 
 export type GemtextMessageBodyProps = {
   body: string;
-  textColor: string;
+  textColor: ColorValue;
   /** Link accent (bubble-aware from parent). */
-  linkColor: string;
+  linkColor: ColorValue;
   baseUrl: string;
   /** Shapes quote / code chrome for incoming vs outgoing bubbles. */
   isOutgoing?: boolean;
@@ -283,8 +293,8 @@ function NestedInlinePiece({
   onGemtextLink,
 }: {
   segment: GemtextInlineSegment;
-  textColor: string;
-  linkColor: string;
+  textColor: ColorValue;
+  linkColor: ColorValue;
   baseUrl: string;
   linksDisabled?: boolean;
   onGemtextLink?: (action: GemtextLinkAction, linkLabel: string) => void;
@@ -377,8 +387,8 @@ function BlockSegment({
   onGemtextLink,
 }: {
   segment: Exclude<GemtextSegment, GemtextInlineSegment>;
-  textColor: string;
-  linkColor: string;
+  textColor: ColorValue;
+  linkColor: ColorValue;
   baseUrl: string;
   isOutgoing: boolean;
   incomingChrome: IncomingGemtextChrome;
@@ -466,7 +476,7 @@ function PreBlock({
   codeBlockTheme,
 }: {
   text: string;
-  textColor: string;
+  textColor: ColorValue;
   isOutgoing: boolean;
   incomingChrome: IncomingGemtextChrome;
   codeBlockTheme: CodeBlockTheme;
@@ -475,7 +485,12 @@ function PreBlock({
   const captureViewRef = useRef<View | null>(null);
   const lines = useMemo(() => text.split("\n"), [text]);
   const terminal = codeBlockTheme === "terminal";
-  const preTextColor = terminal ? "rgba(255, 255, 255, 0.92)" : textColor;
+  const preTextColorForStyle: ColorValue = terminal
+    ? "rgba(255, 255, 255, 0.92)"
+    : textColor;
+  const ansiSource = terminal
+    ? "rgba(255, 255, 255, 0.92)"
+    : ansiColorSource(textColor, incomingChrome);
   const [captureHeight, setCaptureHeight] = useState(0);
   const [widestLineWidth, setWidestLineWidth] = useState(0);
   const capturePaddingX = 12 * 2;
@@ -590,9 +605,9 @@ function PreBlock({
                   {...(Platform.OS === "android"
                     ? { textBreakStrategy: "simple" as const }
                     : {})}
-                  style={[styles.preText, { color: preTextColor }]}
+                  style={[styles.preText, { color: preTextColorForStyle }]}
                 >
-                  {parseAnsiSgrToRuns(line, preTextColor).map((run, ri) => (
+                  {parseAnsiSgrToRuns(line, ansiSource).map((run, ri) => (
                     <Text key={ri} style={run.style}>
                       {run.text}
                     </Text>
@@ -616,7 +631,7 @@ function PreBlock({
               captureWidth={captureWidth}
               captureHeight={Math.ceil(captureHeight)}
               lines={lines}
-              preTextColor={preTextColor}
+              preTextColor={ansiSource}
               preCaptureContainerStyle={preCaptureContainerStyle}
               styles={{
                 exportModalRoot: styles.exportModalRoot,
@@ -646,14 +661,14 @@ function PreBlock({
                 {...(Platform.OS === "android"
                   ? { textBreakStrategy: "simple" as const }
                   : {})}
-                style={[styles.preText, { color: preTextColor }]}
+                style={[styles.preText, { color: preTextColorForStyle }]}
                 onLayout={(e) => {
                   // Capture width is often constrained by parent layout; measure each line instead.
                   const { width } = e.nativeEvent.layout;
                   setWidestLineWidth((prev) => (width > prev ? width : prev));
                 }}
               >
-                {parseAnsiSgrToRuns(line, preTextColor).map((run, ri) => (
+                {parseAnsiSgrToRuns(line, ansiSource).map((run, ri) => (
                   <Text key={ri} style={run.style}>
                     {run.text}
                   </Text>

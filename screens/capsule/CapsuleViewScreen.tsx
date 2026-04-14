@@ -19,7 +19,8 @@ import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import { useAccountActive } from "hooks/account/useAccountActive";
 import { queryKeys } from "lib/queryKeys";
 import {
-  appColors,
+  destructiveTintColor,
+  headerTitleColorForScheme,
   navigationChromeForScheme,
   rootScreenBackgroundForScheme,
   systemBlueForScheme,
@@ -35,8 +36,8 @@ export function CapsuleViewScreen() {
   const palette = selectCapsuleUiPalette(scheme);
   const bg = rootScreenBackgroundForScheme(scheme);
   const tint = systemBlueForScheme(scheme);
-  const titleColor =
-    scheme === "dark" ? appColors.headerTitleDark : appColors.headerTitleLight;
+  const titleColor = headerTitleColorForScheme(scheme);
+  const destructive = destructiveTintColor();
 
   const params = useLocalSearchParams<{ id: string }>();
   const capsuleId = firstParam(params.id) ?? "";
@@ -168,7 +169,7 @@ export function CapsuleViewScreen() {
         <CapsuleAvatar
           capsuleId={capsule.id}
           name={capsule.name}
-          uri={capsule.avatarUrl}
+          emoji={capsule.avatarIcon}
           size={112}
         />
         <Text style={[styles.name, { color: titleColor }]}>{capsule.name}</Text>
@@ -209,6 +210,7 @@ export function CapsuleViewScreen() {
         accessibilityRole="button"
         accessibilityLabel="Edit capsule"
       >
+        <Ionicons name="create-outline" size={22} color={tint} />
         <Text style={[styles.editBtnLabel, { color: tint }]}>Edit</Text>
       </Pressable>
 
@@ -224,7 +226,8 @@ export function CapsuleViewScreen() {
         accessibilityRole="button"
         accessibilityLabel="Delete capsule"
       >
-        <Text style={styles.deleteBtnLabel}>Delete</Text>
+        <Ionicons name="trash-outline" size={22} color={destructive} />
+        <Text style={[styles.deleteBtnLabel, { color: destructive }]}>Delete</Text>
       </Pressable>
     </ScrollView>
   );
@@ -274,25 +277,28 @@ const styles = StyleSheet.create({
   },
   deleteBtn: {
     marginTop: 14,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 12,
     paddingVertical: 14,
     minHeight: 48,
+    gap: 10,
     borderWidth: StyleSheet.hairlineWidth * 2,
   },
   deleteBtnLabel: {
-    color: "#ff3b30",
     fontSize: 17,
     fontWeight: "600",
   },
   editBtn: {
     marginTop: 14,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 12,
     paddingVertical: 14,
     minHeight: 48,
+    gap: 10,
     borderWidth: StyleSheet.hairlineWidth * 2,
   },
   editBtnLabel: {

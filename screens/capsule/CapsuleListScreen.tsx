@@ -4,7 +4,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, type Href } from "expo-router";
 import {
   useCallback,
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -12,16 +11,18 @@ import {
 } from "react";
 import {
   Alert,
-  FlatList,
-  Image,
   Pressable,
+  SectionList,
   StyleSheet,
   Text,
   useColorScheme,
   View,
+  type ColorValue,
 } from "react-native";
 import { usePopupManager } from "react-popup-manager";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
+import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
+import { CategoryManageModal } from "components/capsule/CategoryManageModal";
 import { CapsuleFormModal } from "components/capsule/CapsuleFormModal";
 import {
   selectCapsuleUiPalette,
@@ -32,11 +33,11 @@ import { useAccountActive } from "hooks/account/useAccountActive";
 import type { Capsule } from "lib/models/capsule";
 import { queryKeys } from "lib/queryKeys";
 import {
+  destructiveTintColor,
   navigationChromeForScheme,
   systemBlueForScheme,
 } from "lib/theme/appColors";
-import { capsulesRepo } from "repositories";
-import { avatarHueFromId, initialsFromName } from "utils/avatar";
+import { capsulesRepo, type CapsuleListSection } from "repositories";
 
 const LONG_PRESS_MS = 450;
 
@@ -54,18 +55,27 @@ export function CapsuleListScreen() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const queryClient = useQueryClient();
-  const { data: activeAccount, isPending: activePending } = useAccountActive();
   const {
-    data: capsules = [],
+    data: activeAccount,
+    isPending: activeAccountPending,
+  } = useAccountActive();
+  const {
+    data: sections = [],
+    isPending: capsulesPending,
     refetch: refetchCapsules,
   } = useQuery({
     queryKey: [...queryKeys.capsules.listForActive(), activeAccount?.id ?? "none"],
     queryFn: async () => {
       if (!activeAccount?.id) return [];
-      return capsulesRepo.listForAccount(activeAccount.id);
+      return capsulesRepo.listSectionsForAccount(activeAccount.id);
     },
-    enabled: !activePending,
+    enabled: !activeAccountPending,
   });
+
+  const capsules = useMemo(
+    () => sections.flatMap((s) => s.data),
+    [sections],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -135,6 +145,17 @@ export function CapsuleListScreen() {
     [exitSelectMode, refreshLists],
   );
 
+  const openCategoryManageModal = useCallback(async () => {
+    if (!activeAccount?.id) {
+      Alert.alert("No account", "Select an account before managing categories.");
+      return;
+    }
+    const { response } = popupManager.open(CategoryManageModal, {
+      accountId: activeAccount.id,
+    });
+    await response;
+  }, [popupManager, activeAccount?.id]);
+
   const openAddCapsuleSheet = useCallback(async () => {
     const { response } = popupManager.open(CapsuleFormModal);
     const closeResult = await response;
@@ -162,9 +183,7 @@ export function CapsuleListScreen() {
           ? String(selectedIds.length)
           : "Select"
         : "Capsules",
-      headerLeftContainerStyle: selecting
-        ? { paddingLeft: 16 }
-        : undefined,
+      headerLeftContainerStyle: { paddingLeft: 16 },
       headerRightContainerStyle: {
         paddingRight: 16,
       },
@@ -178,7 +197,16 @@ export function CapsuleListScreen() {
               <Text style={[styles.headerAction, { color: tint }]}>Cancel</Text>
             </Pressable>
           )
-        : undefined,
+        : () => (
+            <Pressable
+              onPress={() => void openCategoryManageModal()}
+              hitSlop={12}
+              style={({ pressed }) => [pressed && { opacity: 0.55 }]}
+              accessibilityLabel="Manage categories"
+            >
+              <Ionicons name="folder-outline" size={28} color={tint} />
+            </Pressable>
+          ),
       headerRight: () =>
         selecting ? (
           <Pressable
@@ -198,7 +226,7 @@ export function CapsuleListScreen() {
             ]}
             accessibilityLabel="Delete selected"
           >
-            <Ionicons name="trash-outline" size={24} color="#ff3b30" />
+            <Ionicons name="trash-outline" size={24} color={destructiveTintColor()} />
           </Pressable>
         ) : (
           <Pressable
@@ -217,19 +245,43 @@ export function CapsuleListScreen() {
     exitSelectMode,
     navigation,
     openAddCapsuleSheet,
+    openCategoryManageModal,
     scheme,
     selecting,
     selectedIds,
     tint,
   ]);
 
+  const showEmptyState =
+    !activeAccountPending && !capsulesPending && capsules.length === 0;
+
   return (
     <View style={[styles.screen, { backgroundColor: palette.background }]}>
-      <FlatList
-        data={capsules}
+      <SectionList<Capsule, CapsuleListSection>
+        sections={sections}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
+        stickySectionHeadersEnabled
+        contentContainerStyle={[
+          styles.listContent,
+          showEmptyState && styles.listContentEmpty,
+        ]}
+        ListEmptyComponent={
+          showEmptyState ? (
+            <CapsulesEmptyState palette={palette} tint={tint} />
+          ) : null
+        }
         extraData={{ selecting, selectedIds }}
+        renderSectionHeader={({ section: { title } }) => (
+          <View
+            style={[styles.sectionHeader, { backgroundColor: palette.background }]}
+          >
+            <Text
+              style={[styles.sectionHeaderText, { color: palette.textSecondary }]}
+            >
+              {title}
+            </Text>
+          </View>
+        )}
         ItemSeparatorComponent={() => (
           <View
             style={[
@@ -304,6 +356,34 @@ export function CapsuleListScreen() {
   );
 }
 
+function CapsulesEmptyState({
+  palette,
+  tint,
+}: {
+  palette: CapsuleListRowPalette;
+  tint: ColorValue;
+}) {
+  return (
+    <View
+      style={styles.emptyWrap}
+      accessibilityLabel="No capsules yet. Capsules are named spaces for your chats. Tap add in the header to create one."
+    >
+      <View
+        style={[styles.emptyIconCircle, { borderColor: palette.separator }]}
+      >
+        <Ionicons name="cube-outline" size={36} color={tint} />
+      </View>
+      <Text style={[styles.emptyTitle, { color: palette.textPrimary }]}>
+        No capsules yet
+      </Text>
+      <Text style={[styles.emptyBody, { color: palette.textSecondary }]}>
+        Capsules are named spaces for your chats—each keeps its own thread and
+        history. Tap + above to create one and start a conversation.
+      </Text>
+    </View>
+  );
+}
+
 function CapsuleRow({
   capsule,
   palette,
@@ -317,13 +397,11 @@ function CapsuleRow({
   palette: CapsuleListRowPalette;
   selecting: boolean;
   selected: boolean;
-  tint: string;
+  tint: ColorValue;
   onPress: () => void;
   onLongPress?: () => void;
 }) {
   const description = capsule.description?.trim();
-  const hue = avatarHueFromId(capsule.id);
-  const initials = initialsFromName(capsule.name);
 
   return (
     <Pressable
@@ -344,11 +422,11 @@ function CapsuleRow({
           />
         </View>
       ) : null}
-      <Avatar
+      <CapsuleAvatar
+        capsuleId={capsule.id}
         name={capsule.name}
-        uri={capsule.avatarUrl}
-        hue={hue}
-        initials={initials}
+        emoji={capsule.avatarIcon}
+        size={52}
       />
       <View style={styles.rowText}>
         <Text
@@ -370,44 +448,6 @@ function CapsuleRow({
   );
 }
 
-function Avatar({
-  uri,
-  hue,
-  initials,
-  name,
-}: {
-  uri?: string;
-  hue: number;
-  initials: string;
-  name: string;
-}) {
-  const [failed, setFailed] = useState(!uri);
-
-  useEffect(() => {
-    setFailed(!uri);
-  }, [uri]);
-
-  if (!failed && uri) {
-    return (
-      <Image
-        accessibilityLabel={`${name} avatar`}
-        source={{ uri }}
-        style={styles.avatarImage}
-        onError={() => setFailed(true)}
-      />
-    );
-  }
-
-  return (
-    <View
-      style={[styles.avatarFallback, { backgroundColor: `hsl(${hue}, 42%, 46%)` }]}
-      accessibilityLabel={`${name} avatar`}
-    >
-      <Text style={styles.avatarInitials}>{initials}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -415,8 +455,51 @@ const styles = StyleSheet.create({
   headerAction: {
     fontSize: 17,
   },
+  sectionHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 18,
+    paddingBottom: 6,
+    backgroundColor: "transparent",
+  },
+  sectionHeaderText: {
+    fontSize: 13,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
   listContent: {
     paddingBottom: 24,
+  },
+  listContentEmpty: {
+    flexGrow: 1,
+    justifyContent: "center",
+  },
+  emptyWrap: {
+    alignItems: "center",
+    paddingHorizontal: 32,
+    paddingVertical: 24,
+    maxWidth: 400,
+    alignSelf: "center",
+  },
+  emptyIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "600",
+    marginTop: 20,
+    textAlign: "center",
+  },
+  emptyBody: {
+    fontSize: 15,
+    marginTop: 10,
+    textAlign: "center",
+    lineHeight: 22,
   },
   row: {
     flexDirection: "row",
@@ -433,23 +516,6 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-  },
-  avatarImage: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-  },
-  avatarFallback: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarInitials: {
-    color: "#ffffff",
-    fontSize: 18,
-    fontWeight: "600",
   },
   rowText: {
     flex: 1,

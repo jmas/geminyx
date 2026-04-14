@@ -18,6 +18,7 @@ import { useAccountActive } from "hooks/account/useAccountActive";
 import { queryKeys } from "lib/queryKeys";
 import { appColors } from "lib/theme/appColors";
 import { accountsRepo } from "repositories";
+import { alertError } from "utils/error";
 
 const colors = {
   light: {
@@ -102,7 +103,7 @@ export function AccountCertificateScreen() {
       );
     } catch (e) {
       console.error("handleImportPkcs12", e);
-      Alert.alert("Certificate", e instanceof Error ? e.message : String(e));
+      alertError(e, "Could not import certificate.", "Certificate");
     }
   }, [activeAccount, queryClient]);
 
@@ -118,7 +119,8 @@ export function AccountCertificateScreen() {
       });
       Alert.alert("Certificate", "Passphrase saved.");
     } catch (e) {
-      Alert.alert("Certificate", e instanceof Error ? e.message : String(e));
+      console.error("handleSavePassphrase", e);
+      alertError(e, "Could not save passphrase.", "Certificate");
     } finally {
       setBusy(false);
     }
@@ -146,10 +148,8 @@ export function AccountCertificateScreen() {
                 queryKey: queryKeys.accounts.active(),
               });
             } catch (e) {
-              Alert.alert(
-                "Certificate",
-                e instanceof Error ? e.message : String(e),
-              );
+              console.error("handleClearCert", e);
+              alertError(e, "Could not remove certificate.", "Certificate");
             } finally {
               setBusy(false);
             }

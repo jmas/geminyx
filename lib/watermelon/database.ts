@@ -4,13 +4,23 @@ import {
   Account,
   AppBlob,
   Capsule,
+  Category,
   Message,
+  Setting,
   Thread,
 } from "lib/watermelon/models";
 import { geminyxMigrations } from "lib/watermelon/migrations";
 import { geminyxSchema } from "lib/watermelon/schema";
 
-const modelClasses = [Account, Capsule, Thread, Message, AppBlob];
+const modelClasses = [
+  Account,
+  Capsule,
+  Category,
+  Thread,
+  Message,
+  AppBlob,
+  Setting,
+];
 
 let databaseSingleton: Database | null = null;
 

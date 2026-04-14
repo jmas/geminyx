@@ -11,6 +11,11 @@ export const queryKeys = {
     detail: (capsuleId: string) =>
       [...queryKeys.capsules.all, "detail", capsuleId] as const,
   },
+  categories: {
+    all: ["categories"] as const,
+    listForActive: () =>
+      [...queryKeys.categories.all, "list-for-active"] as const,
+  },
   threads: {
     all: ["threads"] as const,
     listForActive: () => [...queryKeys.threads.all, "list-for-active"] as const,

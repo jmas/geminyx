@@ -1,7 +1,8 @@
 import type { CapsuleFormModalPalette } from "components/capsule/CapsuleForm";
 import { appColors } from "lib/theme/appColors";
+import { Platform, PlatformColor, type ColorValue } from "react-native";
 
-/** Shared light/dark tokens for capsule list rows and add-capsule sheet. */
+/** Shared light/dark tokens for capsule list rows and add-capsule sheet (Android / web). */
 export const capsuleUiPalette = {
   light: {
     background: "#ffffff",
@@ -38,16 +39,40 @@ export const capsuleUiPalette = {
 } as const satisfies Record<
   "light" | "dark",
   CapsuleFormModalPalette & {
-    textPrimary: string;
-    rowPressed: string;
+    textPrimary: ColorValue;
+    rowPressed: ColorValue;
   }
 >;
 
+const capsuleUiPaletteIOS = {
+  background: PlatformColor("systemBackground"),
+  textPrimary: PlatformColor("label"),
+  textSecondary: PlatformColor("secondaryLabel"),
+  separator: PlatformColor("separator"),
+  rowPressed: PlatformColor("tertiarySystemFill"),
+  sheetTitle: PlatformColor("label"),
+  fieldBg: PlatformColor("secondarySystemGroupedBackground"),
+  fieldBorder: PlatformColor("separator"),
+  fieldText: PlatformColor("label"),
+  placeholder: PlatformColor("placeholderText"),
+  cancelLabel: PlatformColor("systemBlue"),
+  addLabel: PlatformColor("systemBlue"),
+  error: PlatformColor("systemRed"),
+  sheetHandle: PlatformColor("separator"),
+} as const satisfies CapsuleFormModalPalette & {
+  textPrimary: ColorValue;
+  rowPressed: ColorValue;
+};
+
 export type CapsuleListRowPalette =
-  (typeof capsuleUiPalette)[keyof typeof capsuleUiPalette];
+  | (typeof capsuleUiPalette)[keyof typeof capsuleUiPalette]
+  | typeof capsuleUiPaletteIOS;
 
 export function selectCapsuleUiPalette(
   scheme: "light" | "dark" | null | undefined,
 ): CapsuleListRowPalette {
+  if (Platform.OS === "ios") {
+    return capsuleUiPaletteIOS;
+  }
   return scheme === "dark" ? capsuleUiPalette.dark : capsuleUiPalette.light;
 }

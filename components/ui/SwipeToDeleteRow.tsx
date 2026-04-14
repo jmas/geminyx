@@ -2,6 +2,10 @@ import { Ionicons } from "@expo/vector-icons";
 import type { ReactNode, RefObject } from "react";
 import { useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  swipeDeleteActionBackground,
+  swipeEditActionBackground,
+} from "lib/theme/appColors";
 import ReanimatedSwipeable, {
   SwipeDirection,
   type SwipeableMethods,
@@ -50,7 +54,11 @@ export function SwipeToDeleteRow({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Edit"
-              style={[styles.editAction, !isOpenRight && styles.actionDisabled]}
+              style={[
+                styles.editAction,
+                { backgroundColor: swipeEditActionBackground() },
+                !isOpenRight && styles.actionDisabled,
+              ]}
               onPressIn={(e) => e.stopPropagation()}
               onPress={() => {
                 if (!isOpenRightRef.current) return;
@@ -65,7 +73,11 @@ export function SwipeToDeleteRow({
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Delete"
-            style={[styles.deleteAction, !isOpenRight && styles.actionDisabled]}
+            style={[
+              styles.deleteAction,
+              { backgroundColor: swipeDeleteActionBackground() },
+              !isOpenRight && styles.actionDisabled,
+            ]}
             onPressIn={(e) => e.stopPropagation()}
             onPress={() => {
               if (!isOpenRightRef.current) return;
@@ -122,7 +134,6 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   editAction: {
-    backgroundColor: "#3390ec",
     justifyContent: "center",
     alignItems: "center",
     width: 88,
@@ -131,7 +142,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   deleteAction: {
-    backgroundColor: "#ff3b30",
     justifyContent: "center",
     alignItems: "center",
     width: 88,

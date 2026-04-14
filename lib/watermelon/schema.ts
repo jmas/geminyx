@@ -1,7 +1,7 @@
 import { appSchema, tableSchema } from "@nozbe/watermelondb";
 
 export const geminyxSchema = appSchema({
-  version: 2,
+  version: 7,
   tables: [
     tableSchema({
       name: "accounts",
@@ -23,10 +23,19 @@ export const geminyxSchema = appSchema({
       name: "capsules",
       columns: [
         { name: "name", type: "string" },
-        { name: "avatar_url", type: "string", isOptional: true },
+        { name: "avatar_icon", type: "string", isOptional: true },
         { name: "url", type: "string", isOptional: true },
         { name: "description", type: "string", isOptional: true },
         { name: "account_id", type: "string" },
+        { name: "capsule_category_id", type: "string", isOptional: true },
+      ],
+    }),
+    tableSchema({
+      name: "capsule_categories",
+      columns: [
+        { name: "name", type: "string" },
+        { name: "sort_order", type: "number" },
+        { name: "account_id", type: "string", isIndexed: true },
       ],
     }),
     tableSchema({
@@ -55,6 +64,14 @@ export const geminyxSchema = appSchema({
     tableSchema({
       name: "blobs",
       columns: [{ name: "body_base64", type: "string" }],
+    }),
+    tableSchema({
+      name: "settings",
+      columns: [
+        { name: "account_id", type: "string", isIndexed: true, isOptional: true },
+        { name: "setting_key", type: "string", isIndexed: true },
+        { name: "value_json", type: "string" },
+      ],
     }),
   ],
 });

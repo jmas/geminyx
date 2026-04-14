@@ -2,12 +2,21 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { FormikHelpers } from "formik";
 import { router } from "expo-router";
 import { useCallback, useMemo } from "react";
-import { Alert, Pressable, StyleSheet, Text, useColorScheme, View } from "react-native";
+import {
+  Alert,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  useColorScheme,
+  View,
+} from "react-native";
 import { AccountForm, type AccountFormPalette, type AccountFormValues } from "components/account/AccountForm";
 import { useAccountActive } from "hooks/account/useAccountActive";
-import { appColors, systemBlueForScheme } from "lib/theme/appColors";
+import { appColors, iosAccountFormPalette, systemBlueForScheme } from "lib/theme/appColors";
 import { queryKeys } from "lib/queryKeys";
 import { accountsRepo } from "repositories";
+import { alertError } from "utils/error";
 
 const colors = {
   light: {
@@ -36,8 +45,11 @@ export function AccountEditScreen() {
   const scheme = useColorScheme();
   const palette = scheme === "dark" ? colors.dark : colors.light;
 
-  const formPalette: AccountFormPalette = useMemo(
-    () => ({
+  const formPalette: AccountFormPalette = useMemo(() => {
+    if (Platform.OS === "ios") {
+      return iosAccountFormPalette();
+    }
+    return {
       background: palette.background,
       textPrimary: palette.textPrimary,
       textSecondary: palette.textSecondary,
@@ -49,9 +61,8 @@ export function AccountEditScreen() {
       error: palette.error,
       primaryLabel: "#ffffff",
       primaryButtonBg: systemBlueForScheme(scheme),
-    }),
-    [palette, scheme],
-  );
+    };
+  }, [palette, scheme]);
 
   const queryClient = useQueryClient();
   const {
@@ -69,10 +80,7 @@ export function AccountEditScreen() {
     },
     onError: (e) => {
       console.error("AccountEditScreen delete failed", e);
-      Alert.alert(
-        "Could not delete account",
-        e instanceof Error ? e.message : String(e),
-      );
+      alertError(e, "Could not delete account.", "Could not delete account");
     },
   });
 
@@ -120,10 +128,7 @@ export function AccountEditScreen() {
         router.back();
       } catch (e) {
         console.error("AccountEditScreen update failed", e);
-        Alert.alert(
-          "Could not save account",
-          e instanceof Error ? e.message : String(e),
-        );
+        alertError(e, "Could not save account.", "Could not save account");
       } finally {
         setSubmitting(false);
       }

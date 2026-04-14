@@ -4,17 +4,25 @@ import { useEffect, useMemo, useState } from "react";
 import { AccountSwitchModal } from "components/account/AccountSwitchModal";
 import {
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   useColorScheme,
   View,
+  type ColorValue,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAccountActive } from "hooks/account/useAccountActive";
 import type { Account } from "lib/models/account";
-import { appColors, systemBlueForScheme } from "lib/theme/appColors";
+import {
+  appColors,
+  iosScreenContentPalette,
+  systemBlueForScheme,
+  systemGreenColor,
+  systemOrangeColor,
+} from "lib/theme/appColors";
 import { avatarHueFromId, initialsFromName } from "utils/avatar";
 
 const colors = {
@@ -40,10 +48,20 @@ const colors = {
   },
 } as const;
 
+type SettingsPalette =
+  | (typeof colors)["light"]
+  | (typeof colors)["dark"]
+  | ReturnType<typeof iosScreenContentPalette>;
+
 export function AccountSettingsScreen() {
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
-  const palette = scheme === "dark" ? colors.dark : colors.light;
+  const palette: SettingsPalette =
+    Platform.OS === "ios"
+      ? iosScreenContentPalette()
+      : scheme === "dark"
+        ? colors.dark
+        : colors.light;
 
   const {
     data: activeAccount,
@@ -149,7 +167,7 @@ export function AccountSettingsScreen() {
             label="Certificate"
             subtitle={certStatus}
             iconName="shield-checkmark"
-            iconBg="#34C759"
+            iconBg={systemGreenColor()}
             palette={palette}
             onPress={() => router.push("/account/certificate" as any)}
           />
@@ -158,7 +176,7 @@ export function AccountSettingsScreen() {
             label="Developer"
             subtitle={developerSubtitle}
             iconName="hammer"
-            iconBg="#FF9500"
+            iconBg={systemOrangeColor()}
             palette={palette}
             onPress={() => router.push("/account/developer" as any)}
           />
@@ -173,7 +191,7 @@ export function AccountSettingsScreen() {
   );
 }
 
-function MenuSeparator({ palette }: { palette: (typeof colors)["light"] | (typeof colors)["dark"] }) {
+function MenuSeparator({ palette }: { palette: SettingsPalette }) {
   return <View style={[styles.menuSeparator, { backgroundColor: palette.separator }]} />;
 }
 
@@ -188,8 +206,8 @@ function MenuRow({
   label: string;
   subtitle?: string;
   iconName: keyof typeof Ionicons.glyphMap;
-  iconBg: string;
-  palette: (typeof colors)["light"] | (typeof colors)["dark"];
+  iconBg: ColorValue;
+  palette: SettingsPalette;
   onPress: () => void;
 }) {
   return (

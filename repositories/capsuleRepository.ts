@@ -1,47 +1,54 @@
 import type { Capsule } from "lib/models/capsule";
-import { normalizeGeminiCapsuleRootUrl } from "lib/models/gemini";
+import { geminiOriginsMatch, normalizeGeminiCapsuleRootUrl } from "lib/models/gemini";
 import { SEED_CAPSULE_TEMPLATES } from "lib/resources/seedCapsules";
 import { newId } from "lib/db/utils";
-import { AppBlob } from "lib/watermelon/models/Blob";
 import { Capsule as CapsuleModel } from "lib/watermelon/models/Capsule";
-import { Message as MessageModel } from "lib/watermelon/models/Message";
-import { Thread as ThreadModel } from "lib/watermelon/models/Thread";
 import { Q } from "@nozbe/watermelondb";
 import { BaseRepository } from "repositories/baseRepository";
+import { categoriesRepo } from "repositories/categoryRepository";
+import { threadsRepo } from "repositories/threadRepository";
 
 export type CapsuleInsert = {
   name: string;
-  avatarUrl?: string;
+  avatarIcon?: string;
   url?: string;
   description?: string;
   id?: string;
   accountId: string;
+  /** When unset or empty, the capsule is uncategorized (shown as General). */
+  categoryId?: string;
 };
 
 export type CapsulePatch = {
   name?: string;
-  avatarUrl?: string;
+  avatarIcon?: string;
   url?: string;
   description?: string;
+  /** Pass `null` or `""` to clear the category (General). Omit to leave unchanged. */
+  categoryId?: string | null;
+};
+
+export type CapsuleListSection = {
+  title: string;
+  categoryId: string | null;
+  data: Capsule[];
 };
 
 export class CapsuleRepository extends BaseRepository {
   private modelToCapsule(m: CapsuleModel): Capsule {
+    const rawCat = m.categoryId?.trim();
     return {
       id: m.id,
       name: m.name,
-      avatarUrl: m.avatarUrl ?? undefined,
+      avatarIcon: m.avatarIcon?.trim() ? m.avatarIcon.trim() : undefined,
       url: m.url ?? undefined,
       description: m.description?.trim() ? m.description.trim() : undefined,
+      categoryId: rawCat ? rawCat : undefined,
     };
   }
 
   private capsules() {
     return this.db().get<CapsuleModel>("capsules");
-  }
-
-  private threads() {
-    return this.db().get<ThreadModel>("threads");
   }
 
   async listForAccount(accountId: string): Promise<Capsule[]> {
@@ -52,6 +59,54 @@ export class CapsuleRepository extends BaseRepository {
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
     );
     return sorted.map((m) => this.modelToCapsule(m));
+  }
+
+  /**
+   * Capsules grouped by category for sectioned lists. “General” is uncategorized
+   * (`categoryId` unset); empty sections are omitted.
+   */
+  async listSectionsForAccount(accountId: string): Promise<CapsuleListSection[]> {
+    const [rows, categories] = await Promise.all([
+      this.capsules().query(Q.where("account_id", accountId)).fetch(),
+      categoriesRepo.listOrdered(accountId),
+    ]);
+    const catById = new Map(categories.map((c) => [c.id, c] as const));
+    const modelCaps = rows.map((m) => this.modelToCapsule(m));
+    const sortByName = (a: Capsule, b: Capsule) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+
+    const general: Capsule[] = [];
+    const byCatId = new Map<string, Capsule[]>();
+    for (const c of modelCaps) {
+      const cid = c.categoryId?.trim();
+      if (!cid || !catById.has(cid)) {
+        general.push(c);
+        continue;
+      }
+      if (!byCatId.has(cid)) byCatId.set(cid, []);
+      byCatId.get(cid)!.push(c);
+    }
+    general.sort(sortByName);
+
+    const sections: CapsuleListSection[] = [];
+    if (general.length) {
+      sections.push({
+        title: "General",
+        categoryId: null,
+        data: general,
+      });
+    }
+    for (const cat of categories) {
+      const data = (byCatId.get(cat.id) ?? []).sort(sortByName);
+      if (data.length) {
+        sections.push({
+          title: cat.name,
+          categoryId: cat.id,
+          data,
+        });
+      }
+    }
+    return sections;
   }
 
   async getByIdForAccount(
@@ -73,95 +128,107 @@ export class CapsuleRepository extends BaseRepository {
       const m = await this.capsules().find(capsuleId);
       const existing = this.modelToCapsule(m);
       const nextName = (patch.name ?? existing.name).trim();
-      const nextAvatarUrl = (patch.avatarUrl ?? existing.avatarUrl ?? "").trim();
+      const nextAvatarIcon = (patch.avatarIcon ?? existing.avatarIcon ?? "").trim();
       const nextUrl = (patch.url ?? existing.url ?? "").trim();
       const nextDescription = (patch.description ?? existing.description ?? "").trim();
+      let nextCategoryId = existing.categoryId;
+      if (patch.categoryId !== undefined) {
+        const raw = patch.categoryId?.trim();
+        nextCategoryId = raw ? raw : undefined;
+      }
 
       await m.update((rec) => {
         rec.name = nextName;
-        rec.avatarUrl = nextAvatarUrl ? nextAvatarUrl : undefined;
+        rec.avatarIcon = nextAvatarIcon ? nextAvatarIcon : undefined;
         rec.url = nextUrl ? nextUrl : undefined;
         rec.description = nextDescription ? nextDescription : undefined;
+        rec.categoryId = nextCategoryId;
       });
     });
   }
 
   async deleteCascade(capsuleId: string): Promise<void> {
+    await threadsRepo.deleteConversation(capsuleId);
     const db = this.db();
     await db.write(async () => {
-      const messages = db.get<MessageModel>("messages");
-      const blobs = db.get<AppBlob>("blobs");
-      const msgRows = await messages
-        .query(Q.where("thread_id", capsuleId))
-        .fetch();
-      for (const row of msgRows) {
-        const bid = row.blobId;
-        if (bid) {
-          try {
-            const b = await blobs.find(bid);
-            await b.destroyPermanently();
-          } catch {
-            /* blob missing */
-          }
-        }
-        await row.destroyPermanently();
-      }
-      try {
-        const d = await this.threads().find(capsuleId);
-        await d.destroyPermanently();
-      } catch {
-        /* no thread */
-      }
       const cap = await this.capsules().find(capsuleId);
       await cap.destroyPermanently();
     });
   }
 
-  async insertWithThread(input: CapsuleInsert): Promise<Capsule> {
+  /**
+   * Inserts a capsule row only. Thread rows are created on first Visit via
+   * `threadsRepo.ensureThreadForCapsule`.
+   */
+  async insertCapsuleOnly(input: CapsuleInsert): Promise<Capsule> {
     const id = input.id ?? newId("cap");
     const accountId = input.accountId.trim();
     if (!accountId) {
-      throw new Error("capsule.insertWithThread: accountId is required");
+      throw new Error("capsule.insertCapsuleOnly: accountId is required");
     }
     const name = input.name.trim();
-    const avatarUrl = input.avatarUrl?.trim();
+    const avatarIcon = input.avatarIcon?.trim();
     const url = input.url?.trim();
     const description = input.description?.trim();
+    const categoryRaw = input.categoryId?.trim();
     const db = this.db();
     await db.write(async () => {
       await this.capsules().create((rec) => {
         rec._raw.id = id;
         rec.name = name;
-        rec.avatarUrl = avatarUrl ? avatarUrl : undefined;
+        rec.avatarIcon = avatarIcon ? avatarIcon : undefined;
         rec.url = url ? url : undefined;
         rec.description = description ? description : undefined;
         rec.accountId = accountId;
-      });
-      await this.threads().create((rec) => {
-        rec._raw.id = id;
-        rec.capsuleId = id;
-        rec.messageId = undefined;
-        rec.lastMessageAt = new Date(0).toISOString();
-        rec.clientCertShareAllowed = false;
+        rec.categoryId = categoryRaw ? categoryRaw : undefined;
       });
     });
     const row = await this.getByIdForAccount(accountId, id);
     if (!row) {
-      throw new Error("capsule.insertWithThread: row missing after insert");
+      throw new Error("capsule.insertCapsuleOnly: row missing after insert");
     }
     return row;
+  }
+
+  /**
+   * Finds a saved capsule whose Gemini origin matches `geminiUrl` (same host/port).
+   * Normalizes `gemini://` roots (drops path/query) so a stored `gemini://host/` matches
+   * lookups from redirects or links that include a path.
+   */
+  async findByGeminiOriginForAccount(
+    accountId: string,
+    geminiUrl: string,
+  ): Promise<Capsule | null> {
+    const raw = geminiUrl.trim();
+    if (!raw.length) return null;
+    const needle =
+      /^gemini:\/\//i.test(raw) ? normalizeGeminiCapsuleRootUrl(raw) || raw : raw;
+    const caps = await this.listForAccount(accountId);
+    for (const c of caps) {
+      const u = c.url?.trim();
+      if (!u) continue;
+      const hay =
+        /^gemini:\/\//i.test(u) ? normalizeGeminiCapsuleRootUrl(u) || u : u;
+      if (geminiOriginsMatch(hay, needle)) return c;
+    }
+    return null;
   }
 
   async seedDefaultCapsulesIfEmpty(accountId: string): Promise<void> {
     const existing = await this.listForAccount(accountId);
     if (existing.length > 0) return;
+    const categoryByName = await categoriesRepo.ensureSeedCategories(accountId);
     for (const t of SEED_CAPSULE_TEMPLATES) {
       const rawUrl = t.url?.trim();
-      await this.insertWithThread({
+      const catName = t.categoryName?.trim();
+      const categoryId = catName ? categoryByName.get(catName) : undefined;
+      await this.insertCapsuleOnly({
         accountId,
         name: t.name,
+        avatarIcon: t.avatarIcon,
         url: rawUrl ? normalizeGeminiCapsuleRootUrl(rawUrl) : undefined,
         description: t.description,
+        categoryId,
       });
     }
   }

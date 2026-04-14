@@ -7,6 +7,7 @@ import {
   Text,
   useColorScheme,
   View,
+  type ColorValue,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
@@ -23,8 +24,8 @@ export type MessageBodyFullModalProps = {
   onClose?: () => void;
   body: string;
   baseUrl: string;
-  textColor: string;
-  linkColor: string;
+  textColor: ColorValue;
+  linkColor: ColorValue;
   incomingGemtextChrome?: IncomingGemtextChrome;
   geminiLinksDisabled?: boolean;
   onLinkFollow?: (action: GemtextLinkAction, linkLabel: string) => void;

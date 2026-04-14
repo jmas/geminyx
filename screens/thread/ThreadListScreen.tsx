@@ -4,7 +4,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { router, type Href } from "expo-router";
 import {
   useCallback,
-  useEffect,
   useLayoutEffect,
   useRef,
   useState,
@@ -12,25 +11,28 @@ import {
 import {
   Alert,
   FlatList,
-  Image,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   useColorScheme,
   View,
+  type ColorValue,
 } from "react-native";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
+import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
 import { SwipeToDeleteRow } from "components/ui/SwipeToDeleteRow";
 import { useAccountActive } from "hooks/account/useAccountActive";
 import type { Thread } from "lib/models/thread";
 import { queryKeys } from "lib/queryKeys";
 import {
   appColors,
+  destructiveTintColor,
+  iosThreadListPalette,
   navigationChromeForScheme,
   systemBlueForScheme,
 } from "lib/theme/appColors";
-import { capsulesRepo, threadsRepo } from "repositories";
-import { avatarHueFromId, initialsFromName } from "utils/avatar";
+import { threadsRepo } from "repositories";
 import { formatLastMessageDate } from "utils/formatLastMessageDate";
 
 const LONG_PRESS_MS = 450;
@@ -52,12 +54,19 @@ const colors = {
   },
 } as const;
 
-type ListPalette = (typeof colors)[keyof typeof colors];
+type ListPalette =
+  | (typeof colors)[keyof typeof colors]
+  | ReturnType<typeof iosThreadListPalette>;
 
 export function ThreadListScreen() {
   const navigation = useNavigation();
   const scheme = useColorScheme();
-  const palette = scheme === "dark" ? colors.dark : colors.light;
+  const palette: ListPalette =
+    Platform.OS === "ios"
+      ? iosThreadListPalette()
+      : scheme === "dark"
+        ? colors.dark
+        : colors.light;
   const tint = systemBlueForScheme(scheme);
   const openSwipeRef = useRef<SwipeableMethods | null>(null);
 
@@ -65,9 +74,13 @@ export function ThreadListScreen() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const queryClient = useQueryClient();
-  const { data: activeAccount, isPending: activePending } = useAccountActive();
+  const {
+    data: activeAccount,
+    isPending: activeAccountPending,
+  } = useAccountActive();
   const {
     data: threads = [],
+    isPending: threadsPending,
     refetch: refetchThreads,
   } = useQuery({
     queryKey: [...queryKeys.threads.listForActive(), activeAccount?.id ?? "none"],
@@ -75,7 +88,7 @@ export function ThreadListScreen() {
       if (!activeAccount?.id) return [];
       return threadsRepo.listForAccount(activeAccount.id);
     },
-    enabled: !activePending,
+    enabled: !activeAccountPending,
   });
 
   useFocusEffect(
@@ -120,9 +133,9 @@ export function ThreadListScreen() {
       const message =
         count === 1
           ? firstName
-            ? `Delete “${firstName}” and all messages? This cannot be undone.`
-            : "This will remove the capsule, thread, and all messages. This cannot be undone."
-          : "This will remove the selected chats and all messages. This cannot be undone.";
+            ? `Delete “${firstName}” and all messages? The capsule stays in your library. This cannot be undone.`
+            : "This will remove the thread and all messages. The capsule stays in your library. This cannot be undone."
+          : "This will remove the selected threads and all messages. Capsules stay in your library. This cannot be undone.";
 
       Alert.alert(title, message, [
         { text: "Cancel", style: "cancel" },
@@ -133,7 +146,7 @@ export function ThreadListScreen() {
             void (async () => {
               try {
                 for (const id of ids) {
-                  await capsulesRepo.deleteCascade(id);
+                  await threadsRepo.deleteConversation(id);
                 }
                 await refreshLists();
                 exitSelectMode();
@@ -193,7 +206,7 @@ export function ThreadListScreen() {
             ]}
             accessibilityLabel="Delete selected"
           >
-            <Ionicons name="trash-outline" size={24} color="#ff3b30" />
+            <Ionicons name="trash-outline" size={24} color={destructiveTintColor()} />
           </Pressable>
         ) : undefined,
     });
@@ -208,12 +221,23 @@ export function ThreadListScreen() {
     tint,
   ]);
 
+  const showEmptyState =
+    !activeAccountPending && !threadsPending && threads.length === 0;
+
   return (
     <View style={[styles.screen, { backgroundColor: palette.background }]}>
       <FlatList
         data={threads}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          showEmptyState && styles.listContentEmpty,
+        ]}
+        ListEmptyComponent={
+          showEmptyState ? (
+            <ThreadsEmptyState palette={palette} tint={tint} />
+          ) : null
+        }
         extraData={{ selecting, selectedIds }}
         ItemSeparatorComponent={() => (
           <View
@@ -274,6 +298,35 @@ export function ThreadListScreen() {
   );
 }
 
+function ThreadsEmptyState({
+  palette,
+  tint,
+}: {
+  palette: ListPalette;
+  tint: ColorValue;
+}) {
+  return (
+    <View
+      style={styles.emptyWrap}
+      accessibilityLabel="No threads yet. Open a capsule to chat; recent threads appear here."
+    >
+      <View
+        style={[styles.emptyIconCircle, { borderColor: palette.separator }]}
+      >
+        <Ionicons name="chatbubbles-outline" size={34} color={tint} />
+      </View>
+      <Text style={[styles.emptyTitle, { color: palette.textPrimary }]}>
+        No threads yet
+      </Text>
+      <Text style={[styles.emptyBody, { color: palette.textSecondary }]}>
+        Threads are your ongoing conversations with each capsule. Open a
+        capsule to start chatting—recent threads will show up here for quick
+        access.
+      </Text>
+    </View>
+  );
+}
+
 function ThreadRow({
   thread,
   palette,
@@ -287,14 +340,12 @@ function ThreadRow({
   palette: ListPalette;
   selecting: boolean;
   selected: boolean;
-  tint: string;
+  tint: ColorValue;
   onPress: () => void;
   onLongPress?: () => void;
 }) {
   const { capsule } = thread;
   const subtitle = formatLastMessageDate(thread.lastMessageAt);
-  const hue = avatarHueFromId(capsule.id);
-  const initials = initialsFromName(capsule.name);
 
   return (
     <Pressable
@@ -315,11 +366,11 @@ function ThreadRow({
           />
         </View>
       ) : null}
-      <Avatar
+      <CapsuleAvatar
+        capsuleId={capsule.id}
         name={capsule.name}
-        uri={capsule.avatarUrl}
-        hue={hue}
-        initials={initials}
+        emoji={capsule.avatarIcon}
+        size={52}
       />
       <View style={styles.rowText}>
         <Text
@@ -339,44 +390,6 @@ function ThreadRow({
   );
 }
 
-function Avatar({
-  uri,
-  hue,
-  initials,
-  name,
-}: {
-  uri?: string;
-  hue: number;
-  initials: string;
-  name: string;
-}) {
-  const [failed, setFailed] = useState(!uri);
-
-  useEffect(() => {
-    setFailed(!uri);
-  }, [uri]);
-
-  if (!failed && uri) {
-    return (
-      <Image
-        accessibilityLabel={`${name} avatar`}
-        source={{ uri }}
-        style={styles.avatarImage}
-        onError={() => setFailed(true)}
-      />
-    );
-  }
-
-  return (
-    <View
-      style={[styles.avatarFallback, { backgroundColor: `hsl(${hue}, 42%, 46%)` }]}
-      accessibilityLabel={`${name} avatar`}
-    >
-      <Text style={styles.avatarInitials}>{initials}</Text>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -386,6 +399,37 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingBottom: 24,
+  },
+  listContentEmpty: {
+    flexGrow: 1,
+    justifyContent: "center",
+  },
+  emptyWrap: {
+    alignItems: "center",
+    paddingHorizontal: 32,
+    paddingVertical: 24,
+    maxWidth: 400,
+    alignSelf: "center",
+  },
+  emptyIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "600",
+    marginTop: 20,
+    textAlign: "center",
+  },
+  emptyBody: {
+    fontSize: 15,
+    marginTop: 10,
+    textAlign: "center",
+    lineHeight: 22,
   },
   row: {
     flexDirection: "row",
@@ -402,23 +446,6 @@ const styles = StyleSheet.create({
   },
   separator: {
     height: StyleSheet.hairlineWidth,
-  },
-  avatarImage: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-  },
-  avatarFallback: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  avatarInitials: {
-    color: "#ffffff",
-    fontSize: 18,
-    fontWeight: "600",
   },
   rowText: {
     flex: 1,

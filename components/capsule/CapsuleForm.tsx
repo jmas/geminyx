@@ -1,7 +1,10 @@
+import { Ionicons } from "@expo/vector-icons";
 import { Formik, type FormikHelpers } from "formik";
-import { type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import {
   ActivityIndicator,
+  FlatList,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -9,24 +12,31 @@ import {
   Text,
   TextInput,
   View,
+  type ColorValue,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import EmojiPicker, { en, type EmojiType } from "rn-emoji-keyboard";
 import * as yup from "yup";
+import { rnEmojiKeyboardTheme } from "components/capsule/capsuleEmojiKeyboardTheme";
 import { useKeyboardHeight } from "hooks/useKeyboardHeight";
-import { systemBlueForScheme } from "lib/theme/appColors";
+import { suggestedCapsuleNameFromGeminiUrl } from "lib/models/gemini";
 
 export type CapsuleFormValues = {
   name: string;
-  avatarUrl: string;
+  /** Emoji string; empty means use initials in the avatar circle */
+  avatarIcon: string;
   url: string;
   description: string;
+  /** Empty string means the default “General” (uncategorized). */
+  categoryId: string;
 };
 
 export const capsuleFormEmptyValues: CapsuleFormValues = {
   name: "",
-  avatarUrl: "",
+  avatarIcon: "",
   url: "",
   description: "",
+  categoryId: "",
 };
 
 function isEmptyOrValidUrl(value: string | undefined) {
@@ -42,10 +52,10 @@ function isEmptyOrValidUrl(value: string | undefined) {
 
 export const capsuleFormValidationSchema = yup.object({
   name: yup.string().trim().required("Name is required"),
-  avatarUrl: yup
+  avatarIcon: yup
     .string()
     .trim()
-    .test("url", "Must be a valid URL", isEmptyOrValidUrl),
+    .max(32, "Icon is too long"),
   url: yup
     .string()
     .trim()
@@ -54,25 +64,28 @@ export const capsuleFormValidationSchema = yup.object({
     .string()
     .trim()
     .max(500, "Description must be at most 500 characters"),
+  categoryId: yup.string(),
 });
 
 export type CapsuleFormPalette = {
-  background: string;
-  textSecondary: string;
-  separator: string;
-  fieldBg: string;
-  fieldBorder: string;
-  fieldText: string;
-  placeholder: string;
-  error: string;
-  cancelLabel: string;
-  addLabel: string;
+  background: ColorValue;
+  textSecondary: ColorValue;
+  separator: ColorValue;
+  fieldBg: ColorValue;
+  fieldBorder: ColorValue;
+  fieldText: ColorValue;
+  placeholder: ColorValue;
+  error: ColorValue;
+  cancelLabel: ColorValue;
+  addLabel: ColorValue;
 };
 
 export type CapsuleFormModalPalette = CapsuleFormPalette & {
-  sheetTitle: string;
-  sheetHandle: string;
+  sheetTitle: ColorValue;
+  sheetHandle: ColorValue;
 };
+
+export type CategoryOption = { id: string; name: string };
 
 export type CapsuleFormProps = {
   palette: CapsuleFormPalette;
@@ -80,8 +93,13 @@ export type CapsuleFormProps = {
   isPending: boolean;
   initialValues?: CapsuleFormValues;
   submitLabel?: string;
+  /** When true, changing Capsule URL updates the name from the hostname (add flow). */
+  autoNameFromUrl?: boolean;
   /** Use `useHeaderHeight()` when the form sits under a navigation header. */
   keyboardVerticalOffset?: number;
+  /** When set, shows a category picker (includes “General” as `id: ""`). */
+  categoryOptions?: CategoryOption[];
+  categoryOptionsLoading?: boolean;
   onCancel: () => void;
   onSubmit: (
     values: CapsuleFormValues,
@@ -95,16 +113,20 @@ export function CapsuleForm({
   isPending,
   initialValues = capsuleFormEmptyValues,
   submitLabel = "Add",
+  autoNameFromUrl = true,
+  categoryOptions,
+  categoryOptionsLoading,
   onCancel,
   onSubmit,
 }: CapsuleFormProps) {
   const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardHeight();
-  const submitSpinnerColor = systemBlueForScheme(scheme);
   const bottomPad = Math.max(insets.bottom, 12);
   const footerLift = keyboardHeight > 0 ? Math.max(0, keyboardHeight - insets.bottom) : 0;
   const scrollBottomPad =
     16 + styles.actions.paddingTop + ACTION_ROW_HEIGHT + bottomPad;
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
 
   return (
     <Formik<CapsuleFormValues>
@@ -119,171 +141,352 @@ export function CapsuleForm({
         touched,
         handleChange,
         handleBlur,
+        setFieldValue,
         handleSubmit,
         isSubmitting,
-      }) => (
-        <View style={styles.root}>
-          <ScrollView
-            style={styles.scroll}
-            contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollBottomPad }]}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-          >
-            <FieldBlock label="Name" palette={palette}>
-              <TextInput
-                value={values.name}
-                onChangeText={handleChange("name")}
-                onBlur={handleBlur("name")}
-                placeholder="Display name"
-                placeholderTextColor={palette.placeholder}
-                autoCorrect={false}
-                autoCapitalize="words"
-                style={[
-                  styles.fieldInput,
-                  {
-                    backgroundColor: palette.fieldBg,
-                    borderColor: palette.fieldBorder,
-                    color: palette.fieldText,
-                  },
-                ]}
-              />
-              {touched.name && errors.name ? (
-                <Text style={[styles.fieldError, { color: palette.error }]}>
-                  {errors.name}
-                </Text>
-              ) : null}
-            </FieldBlock>
+      }) => {
+        const selectedCategoryName =
+          categoryOptions?.find((o) => o.id === (values.categoryId ?? ""))
+            ?.name ?? "General";
 
-            <FieldBlock label="Avatar URL" palette={palette}>
-              <TextInput
-                value={values.avatarUrl}
-                onChangeText={handleChange("avatarUrl")}
-                onBlur={handleBlur("avatarUrl")}
-                placeholder="https://…"
-                placeholderTextColor={palette.placeholder}
-                autoCorrect={false}
-                autoCapitalize="none"
-                keyboardType="url"
-                style={[
-                  styles.fieldInput,
-                  {
-                    backgroundColor: palette.fieldBg,
-                    borderColor: palette.fieldBorder,
-                    color: palette.fieldText,
-                  },
-                ]}
-              />
-              {touched.avatarUrl && errors.avatarUrl ? (
-                <Text style={[styles.fieldError, { color: palette.error }]}>
-                  {errors.avatarUrl}
-                </Text>
-              ) : null}
-            </FieldBlock>
+        const trimmedIcon = values.avatarIcon.trim();
 
-            <FieldBlock label="Capsule URL" palette={palette}>
-              <TextInput
-                value={values.url}
-                onChangeText={handleChange("url")}
-                onBlur={handleBlur("url")}
-                placeholder="gemini://…"
-                placeholderTextColor={palette.placeholder}
-                autoCorrect={false}
-                autoCapitalize="none"
-                keyboardType="url"
-                style={[
-                  styles.fieldInput,
-                  {
-                    backgroundColor: palette.fieldBg,
-                    borderColor: palette.fieldBorder,
-                    color: palette.fieldText,
-                  },
-                ]}
-              />
-              {touched.url && errors.url ? (
-                <Text style={[styles.fieldError, { color: palette.error }]}>
-                  {errors.url}
-                </Text>
-              ) : null}
-            </FieldBlock>
+        const onUrlChange = (text: string) => {
+          void setFieldValue("url", text);
+          if (!autoNameFromUrl) return;
+          const trimmed = text.trim();
+          if (!trimmed) return;
+          try {
+            new URL(trimmed);
+            void setFieldValue("name", suggestedCapsuleNameFromGeminiUrl(trimmed));
+          } catch {
+            /* invalid URL — keep name */
+          }
+        };
 
-            <FieldBlock label="Description" palette={palette}>
-              <TextInput
-                value={values.description}
-                onChangeText={handleChange("description")}
-                onBlur={handleBlur("description")}
-                placeholder="Optional subtitle"
-                placeholderTextColor={palette.placeholder}
-                multiline
-                style={[
-                  styles.fieldInput,
-                  styles.fieldInputMultiline,
-                  {
-                    backgroundColor: palette.fieldBg,
-                    borderColor: palette.fieldBorder,
-                    color: palette.fieldText,
-                  },
-                ]}
-              />
-              {touched.description && errors.description ? (
-                <Text style={[styles.fieldError, { color: palette.error }]}>
-                  {errors.description}
-                </Text>
-              ) : null}
-            </FieldBlock>
-          </ScrollView>
-
-          <View
-            style={[
-              styles.actions,
-              {
-                borderTopColor: palette.separator,
-                paddingBottom: bottomPad,
-                marginBottom: footerLift,
-                backgroundColor: palette.background,
-              },
-            ]}
-          >
-            <Pressable
-              onPress={onCancel}
-              disabled={isSubmitting || isPending}
-              style={({ pressed }) => [
-                styles.actionBtn,
-                pressed && { opacity: 0.55 },
-              ]}
-              accessibilityLabel="Cancel"
+        return (
+          <View style={styles.root}>
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={[styles.scrollContent, { paddingBottom: scrollBottomPad }]}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
             >
-              <Text style={[styles.actionLabel, { color: palette.cancelLabel }]}>
-                Cancel
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => handleSubmit()}
-              disabled={isSubmitting || isPending}
-              style={({ pressed }) => [
-                styles.actionBtn,
-                pressed && { opacity: 0.55 },
-              ]}
-              accessibilityLabel={`${submitLabel} capsule`}
-            >
-              {isSubmitting || isPending ? (
-                <ActivityIndicator color={submitSpinnerColor} />
-              ) : (
-                <Text
+              <FieldBlock label="Capsule URL" palette={palette}>
+                <TextInput
+                  value={values.url}
+                  onChangeText={onUrlChange}
+                  onBlur={handleBlur("url")}
+                  placeholder="gemini://…"
+                  placeholderTextColor={palette.placeholder}
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  keyboardType="url"
                   style={[
-                    styles.actionLabel,
+                    styles.fieldInput,
                     {
-                      color: palette.addLabel,
-                      fontWeight: "600",
+                      backgroundColor: palette.fieldBg,
+                      borderColor: palette.fieldBorder,
+                      color: palette.fieldText,
+                    },
+                  ]}
+                />
+                {touched.url && errors.url ? (
+                  <Text style={[styles.fieldError, { color: palette.error }]}>
+                    {errors.url}
+                  </Text>
+                ) : null}
+              </FieldBlock>
+
+              <FieldBlock label="Name" palette={palette}>
+                <TextInput
+                  value={values.name}
+                  onChangeText={handleChange("name")}
+                  onBlur={handleBlur("name")}
+                  placeholder="Display name"
+                  placeholderTextColor={palette.placeholder}
+                  autoCorrect={false}
+                  autoCapitalize="words"
+                  style={[
+                    styles.fieldInput,
+                    {
+                      backgroundColor: palette.fieldBg,
+                      borderColor: palette.fieldBorder,
+                      color: palette.fieldText,
+                    },
+                  ]}
+                />
+                {touched.name && errors.name ? (
+                  <Text style={[styles.fieldError, { color: palette.error }]}>
+                    {errors.name}
+                  </Text>
+                ) : null}
+              </FieldBlock>
+
+              <FieldBlock label="Icon" palette={palette}>
+                <View
+                  style={[
+                    styles.fieldInput,
+                    styles.categoryPickerRow,
+                    {
+                      backgroundColor: palette.fieldBg,
+                      borderColor: palette.fieldBorder,
                     },
                   ]}
                 >
-                  {submitLabel}
+                  <TextInput
+                    value={values.avatarIcon}
+                    onChangeText={handleChange("avatarIcon")}
+                    onBlur={handleBlur("avatarIcon")}
+                    placeholder="Choose or type an emoji"
+                    placeholderTextColor={palette.placeholder}
+                    maxLength={32}
+                    editable={!isPending}
+                    autoCorrect={false}
+                    style={[
+                      styles.iconFieldInput,
+                      {
+                        color: palette.fieldText,
+                        backgroundColor: "transparent",
+                      },
+                      Platform.OS === "android" ? { includeFontPadding: false } : null,
+                    ]}
+                  />
+                  <View style={styles.iconFieldActions}>
+                    {trimmedIcon ? (
+                      <Pressable
+                        onPress={() => void setFieldValue("avatarIcon", "")}
+                        disabled={isPending}
+                        hitSlop={8}
+                        style={({ pressed }) => [
+                          styles.iconFieldTrailingBtn,
+                          pressed && { opacity: 0.55 },
+                        ]}
+                        accessibilityLabel="Clear icon"
+                      >
+                        <Ionicons
+                          name="close-circle"
+                          size={20}
+                          color={palette.textSecondary as string}
+                        />
+                      </Pressable>
+                    ) : null}
+                    <Pressable
+                      onPress={() => setEmojiPickerOpen(true)}
+                      disabled={isPending}
+                      hitSlop={8}
+                      style={({ pressed }) => [
+                        styles.iconFieldTrailingBtn,
+                        pressed && { opacity: 0.55 },
+                      ]}
+                      accessibilityLabel="Open emoji picker"
+                      accessibilityHint="Opens the emoji keyboard with search, categories, and skin tones"
+                    >
+                      <Ionicons
+                        name="happy-outline"
+                        size={20}
+                        color={palette.addLabel as string}
+                      />
+                    </Pressable>
+                  </View>
+                </View>
+                {touched.avatarIcon && errors.avatarIcon ? (
+                  <Text style={[styles.fieldError, { color: palette.error }]}>
+                    {errors.avatarIcon}
+                  </Text>
+                ) : null}
+              </FieldBlock>
+
+              {categoryOptions ? (
+                <FieldBlock label="Category" palette={palette}>
+                  <Pressable
+                    onPress={() => setCategoryPickerOpen(true)}
+                    disabled={categoryOptionsLoading || isPending}
+                    style={({ pressed }) => [
+                      styles.fieldInput,
+                      styles.categoryPickerRow,
+                      {
+                        backgroundColor: palette.fieldBg,
+                        borderColor: palette.fieldBorder,
+                      },
+                      pressed && { opacity: 0.75 },
+                    ]}
+                    accessibilityLabel="Choose category"
+                  >
+                    <Text
+                      style={[styles.categoryPickerText, { color: palette.fieldText }]}
+                      numberOfLines={1}
+                    >
+                      {categoryOptionsLoading ? "Loading…" : selectedCategoryName}
+                    </Text>
+                    <Ionicons
+                      name="chevron-down"
+                      size={20}
+                      color={palette.textSecondary as string}
+                    />
+                  </Pressable>
+                  <Modal
+                    visible={categoryPickerOpen}
+                    transparent
+                    animationType="fade"
+                    onRequestClose={() => setCategoryPickerOpen(false)}
+                  >
+                    <View style={styles.catModalRoot}>
+                      <Pressable
+                        style={styles.catModalBackdrop}
+                        onPress={() => setCategoryPickerOpen(false)}
+                      />
+                      <View
+                        style={[
+                          styles.catModalSheet,
+                          {
+                            backgroundColor: palette.fieldBg,
+                            borderColor: palette.fieldBorder,
+                            marginBottom: insets.bottom + 12,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.catModalTitle, { color: palette.fieldText }]}
+                        >
+                          Category
+                        </Text>
+                        <FlatList
+                          data={categoryOptions}
+                          keyExtractor={(item) => item.id || "__general__"}
+                          keyboardShouldPersistTaps="handled"
+                          style={styles.catModalList}
+                          renderItem={({ item }) => (
+                            <Pressable
+                              onPress={() => {
+                                void setFieldValue("categoryId", item.id);
+                                setCategoryPickerOpen(false);
+                              }}
+                              style={({ pressed }) => [
+                                styles.catModalRow,
+                                pressed && { opacity: 0.7 },
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.catModalRowLabel,
+                                  { color: palette.fieldText },
+                                ]}
+                                numberOfLines={2}
+                              >
+                                {item.name}
+                              </Text>
+                              {(values.categoryId ?? "") === item.id ? (
+                                <Ionicons
+                                  name="checkmark"
+                                  size={22}
+                                  color={palette.addLabel as string}
+                                />
+                              ) : null}
+                            </Pressable>
+                          )}
+                        />
+                      </View>
+                    </View>
+                  </Modal>
+                </FieldBlock>
+              ) : null}
+
+              <FieldBlock label="Description" palette={palette}>
+                <TextInput
+                  value={values.description}
+                  onChangeText={handleChange("description")}
+                  onBlur={handleBlur("description")}
+                  placeholder="Optional subtitle"
+                  placeholderTextColor={palette.placeholder}
+                  multiline
+                  style={[
+                    styles.fieldInput,
+                    styles.fieldInputMultiline,
+                    {
+                      backgroundColor: palette.fieldBg,
+                      borderColor: palette.fieldBorder,
+                      color: palette.fieldText,
+                    },
+                  ]}
+                />
+                {touched.description && errors.description ? (
+                  <Text style={[styles.fieldError, { color: palette.error }]}>
+                    {errors.description}
+                  </Text>
+                ) : null}
+              </FieldBlock>
+            </ScrollView>
+
+            <View
+              style={[
+                styles.actions,
+                {
+                  borderTopColor: palette.separator,
+                  paddingBottom: bottomPad,
+                  marginBottom: footerLift,
+                  backgroundColor: palette.background,
+                },
+              ]}
+            >
+              <Pressable
+                onPress={onCancel}
+                disabled={isSubmitting || isPending}
+                style={({ pressed }) => [
+                  styles.actionBtn,
+                  pressed && { opacity: 0.55 },
+                ]}
+                accessibilityLabel="Cancel"
+              >
+                <Text style={[styles.actionLabel, { color: palette.cancelLabel }]}>
+                  Cancel
                 </Text>
-              )}
-            </Pressable>
+              </Pressable>
+              <Pressable
+                onPress={() => handleSubmit()}
+                disabled={isSubmitting || isPending}
+                style={({ pressed }) => [
+                  styles.actionBtn,
+                  pressed && { opacity: 0.55 },
+                ]}
+                accessibilityLabel={`${submitLabel} capsule`}
+              >
+                {isSubmitting || isPending ? (
+                  <ActivityIndicator color={palette.addLabel} />
+                ) : (
+                  <Text
+                    style={[
+                      styles.actionLabel,
+                      {
+                        color: palette.addLabel,
+                        fontWeight: "600",
+                      },
+                    ]}
+                  >
+                    {submitLabel}
+                  </Text>
+                )}
+              </Pressable>
+            </View>
+
+            <EmojiPicker
+              open={emojiPickerOpen}
+              onClose={() => setEmojiPickerOpen(false)}
+              onEmojiSelected={(emoji: EmojiType) => {
+                void setFieldValue("avatarIcon", emoji.emoji);
+              }}
+              theme={rnEmojiKeyboardTheme(scheme)}
+              translation={en}
+              enableSearchBar
+              enableRecentlyUsed
+              categoryPosition="floating"
+              expandable
+              defaultHeight="42%"
+              expandedHeight="88%"
+            />
           </View>
-        </View>
-      )}
+        );
+      }}
     </Formik>
   );
 }
@@ -340,6 +543,26 @@ const styles = StyleSheet.create({
     minHeight: 80,
     textAlignVertical: "top",
   },
+  /** Inner input: no second border — only the row’s `fieldInput` stroke (like Category). */
+  iconFieldInput: {
+    flex: 1,
+    minWidth: 0,
+    margin: 0,
+    padding: 0,
+    fontSize: 16,
+    borderWidth: 0,
+  },
+  iconFieldActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexShrink: 0,
+    marginLeft: 8,
+  },
+  iconFieldTrailingBtn: {
+    marginLeft: 4,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   fieldError: {
     fontSize: 13,
     marginTop: 6,
@@ -360,5 +583,56 @@ const styles = StyleSheet.create({
   },
   actionLabel: {
     fontSize: 17,
+  },
+  categoryPickerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  categoryPickerText: {
+    flex: 1,
+    fontSize: 16,
+    marginRight: 8,
+  },
+  catModalRoot: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  catModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+  },
+  catModalSheet: {
+    marginHorizontal: 12,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    maxHeight: "70%",
+    overflow: "hidden",
+  },
+  catModalTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 8,
+  },
+  catModalList: {
+    maxHeight: 320,
+  },
+  catModalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(60, 60, 67, 0.18)",
+  },
+  catModalRowLabel: {
+    flex: 1,
+    fontSize: 17,
+    marginRight: 12,
   },
 });

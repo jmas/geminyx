@@ -1,24 +1,25 @@
-import { Formik, type FormikHelpers } from "formik";
 import { Ionicons } from "@expo/vector-icons";
+import { Formik, type FormikHelpers } from "formik";
 import {
   Keyboard,
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   TextInput,
   View,
+  type ColorValue,
 } from "react-native";
-import * as yup from "yup";
+import { formatError } from "utils/error";
 import { logThreadMessage } from "utils/threadMessageLog";
+import * as yup from "yup";
 
 export type MessageFormPalette = {
-  composerBarBg: string;
-  composerFieldBg: string;
-  composerBorder: string;
-  composerPlaceholder: string;
-  composerText: string;
-  iconSend: string;
+  composerBarBg: ColorValue;
+  composerFieldBg: ColorValue;
+  composerBorder: ColorValue;
+  composerPlaceholder: ColorValue;
+  composerText: ColorValue;
+  iconSend: ColorValue;
 };
 
 export type MessageFormValues = {
@@ -86,7 +87,7 @@ export function MessageForm({
         } catch (e) {
           logThreadMessage("composer.submit.error", {
             bodyChars: text.length,
-            error: e instanceof Error ? e.message : String(e),
+            error: formatError(e, "Unknown error."),
           });
           await setFieldValue("body", text);
         }
@@ -132,15 +133,15 @@ export function MessageForm({
                   !canHome && styles.composerSendDisabled,
                 ]}
                 accessibilityLabel={
-                  requestHomeAsRefresh
-                    ? "Revisit home"
-                    : "Visit home"
+                  requestHomeAsRefresh ? "Revisit home" : "Visit home"
                 }
                 accessibilityState={{ disabled: !canHome }}
               >
                 <View style={styles.composerHomePillContent}>
                   <Ionicons
-                    name={requestHomeAsRefresh ? "refresh-outline" : "home-outline"}
+                    name={
+                      requestHomeAsRefresh ? "refresh-outline" : "home-outline"
+                    }
                     size={18}
                     color={palette.composerText}
                   />

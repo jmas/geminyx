@@ -291,6 +291,25 @@ export function suggestedCapsuleNameFromGeminiUrl(url: string): string {
   return "Gemini capsule";
 }
 
+/** Path + query + hash for footer “Visit …” labels (e.g. `/foo/bar?x=1`). */
+export function geminiPathnameForVisitButton(url: string): string {
+  const raw = url.trim();
+  if (!raw.length) return "";
+  try {
+    const u = new URL(raw);
+    const p = `${u.pathname}${u.search}${u.hash}`;
+    return p.length > 0 ? p : "/";
+  } catch {
+    return "";
+  }
+}
+
+export function truncateForVisitButtonLabel(text: string, max = 80): string {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max)}...`;
+}
+
 /** MIME from Gemini `20 <meta>` line (strip parameters). */
 export function geminiSuccessMimeType(meta: string): string {
   const m = meta.trim();

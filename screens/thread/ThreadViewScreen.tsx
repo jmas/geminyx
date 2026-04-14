@@ -14,17 +14,25 @@ import { BlockingProgressModal } from "components/ui/BlockingProgressModal";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { useAccountActive } from "hooks/account/useAccountActive";
 import { useMessageCreate } from "hooks/message/useMessageCreate";
-import type { Capsule } from "lib/models/capsule";
 import type { ThreadMessage } from "lib/models/threadMessage";
 import {
   geminiDocumentBaseUrlForMessage,
   geminiOriginsMatch,
+  geminiPathnameForVisitButton,
   isCapsuleRootRequestPath,
+  normalizeGeminiCapsuleRootUrl,
   suggestedCapsuleNameFromGeminiUrl,
+  truncateForVisitButtonLabel,
 } from "lib/models/gemini";
 import { queryKeys } from "lib/queryKeys";
 import { MESSAGES_PAGE_SIZE } from "lib/resources/messages";
-import { appColors, navigationChromeForScheme } from "lib/theme/appColors";
+import {
+  appColors,
+  headerTitleColorForScheme,
+  navigationChromeForScheme,
+  rootScreenBackgroundForScheme,
+  systemBlueForScheme,
+} from "lib/theme/appColors";
 import {
   useCallback,
   useEffect,
@@ -47,8 +55,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { accountsRepo, capsulesRepo, threadsRepo, messagesRepo } from "repositories";
-import { logThreadMessage } from "utils/threadMessageLog";
+import { alertError, formatError } from "utils/error";
 import { firstParam } from "utils/searchParams";
+import { logThreadMessage } from "utils/threadMessageLog";
 
 const colors = {
   light: {
@@ -95,15 +104,6 @@ const colors = {
   },
 } as const;
 
-function findCapsuleForGeminiUrl(
-  capsules: Capsule[],
-  targetUrl: string,
-): Capsule | undefined {
-  return capsules.find(
-    (c) => c.url?.trim() && geminiOriginsMatch(c.url, targetUrl),
-  );
-}
-
 export function ThreadViewScreen() {
   const navigation = useNavigation();
   const router = useRouter();
@@ -113,11 +113,24 @@ export function ThreadViewScreen() {
   const messagesRef = useRef<ThreadMessage[]>([]);
   const hasMoreOlderRef = useRef(false);
   const loadingOlderRef = useRef(false);
-  const params = useLocalSearchParams<{ id: string; name?: string }>();
-  const threadId = firstParam(params.id) ?? "";
+  const params = useLocalSearchParams<{ id?: string; name?: string; url?: string }>();
+  const routeCapsuleId = firstParam(params.id) ?? "";
   const nameParam = firstParam(params.name);
+  const urlParam = firstParam(params.url);
   const scheme = useColorScheme();
-  const palette = scheme === "dark" ? colors.dark : colors.light;
+  const basePalette = scheme === "dark" ? colors.dark : colors.light;
+  const palette = useMemo(() => {
+    if (Platform.OS !== "ios") return basePalette;
+    const tint = systemBlueForScheme(scheme);
+    return {
+      ...basePalette,
+      screenBg: rootScreenBackgroundForScheme(scheme),
+      bubbleOutgoing: tint,
+      iconSend: tint,
+      viewFullBtnLabel: tint,
+      linkIncoming: tint,
+    };
+  }, [scheme, basePalette]);
 
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [loadingInitial, setLoadingInitial] = useState(false);
@@ -131,11 +144,41 @@ export function ThreadViewScreen() {
   const queryClient = useQueryClient();
   const { data: activeAccount, isPending: activePending } = useAccountActive();
 
+  const [resolvedCapsuleId, setResolvedCapsuleId] = useState(routeCapsuleId);
+
+  useEffect(() => {
+    setResolvedCapsuleId(routeCapsuleId);
+  }, [routeCapsuleId]);
+
+  useEffect(() => {
+    if (routeCapsuleId || !urlParam?.trim() || !activeAccount?.id) return;
+    let cancelled = false;
+    void capsulesRepo
+      .findByGeminiOriginForAccount(activeAccount.id, urlParam.trim())
+      .then((found) => {
+        if (!cancelled && found) setResolvedCapsuleId(found.id);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [routeCapsuleId, urlParam, activeAccount?.id]);
+
+  const threadId = resolvedCapsuleId;
+
   const { data: threadRow, refetch: refetchThreadRow } = useQuery({
     queryKey: [...queryKeys.threads.detail(threadId), activeAccount?.id ?? "none"],
     queryFn: async () => {
       if (!threadId || !activeAccount?.id) return null;
       return threadsRepo.getByIdForAccount(activeAccount.id, threadId);
+    },
+    enabled: Boolean(threadId) && !activePending,
+  });
+
+  const { data: capsuleRow } = useQuery({
+    queryKey: [...queryKeys.capsules.detail(threadId), activeAccount?.id ?? "none"],
+    queryFn: async () => {
+      if (!threadId || !activeAccount?.id) return null;
+      return capsulesRepo.getByIdForAccount(activeAccount.id, threadId);
     },
     enabled: Boolean(threadId) && !activePending,
   });
@@ -216,7 +259,23 @@ export function ThreadViewScreen() {
     };
   }, [activeAccount]);
 
-  const capsuleUrl = threadRow?.capsule?.url?.trim() ?? "";
+  const capsuleUrl = useMemo(() => {
+    const fromParam = urlParam?.trim() ?? "";
+    if (fromParam.length > 0) return fromParam;
+    const fromThread = threadRow?.capsule?.url?.trim() ?? "";
+    if (fromThread.length > 0) return fromThread;
+    const fromCapsule = capsuleRow?.url?.trim() ?? "";
+    if (fromCapsule.length > 0) return fromCapsule;
+    return "";
+  }, [threadRow?.capsule?.url, capsuleRow?.url, urlParam]);
+
+  const visitFooterPrimaryLabel = useMemo(() => {
+    const raw = urlParam?.trim();
+    if (!raw) return "Visit";
+    const path = geminiPathnameForVisitButton(raw);
+    if (!path) return "Visit";
+    return `Visit ${truncateForVisitButtonLabel(path)}`;
+  }, [urlParam]);
 
   const scheduleScrollToEnd = useCallback(() => {
     requestAnimationFrame(() =>
@@ -269,6 +328,9 @@ export function ThreadViewScreen() {
     setMessages,
     scheduleScrollToEnd,
     onLocalDataChanged: refreshThreadContext,
+    bootstrapGeminiUrl:
+      !threadId && urlParam?.trim() ? urlParam.trim() : undefined,
+    onBootstrapThreadId: setResolvedCapsuleId,
   });
 
   useEffect(() => {
@@ -323,10 +385,7 @@ export function ThreadViewScreen() {
               Alert.alert("Cannot open link", action.url);
             }
           } catch (e) {
-            Alert.alert(
-              "Could not open link",
-              e instanceof Error ? e.message : String(e),
-            );
+            alertError(e, "Could not open link.", "Could not open link");
           }
         })();
         return;
@@ -348,31 +407,38 @@ export function ThreadViewScreen() {
             Alert.alert("No account", "Add or select an account first.");
             return;
           }
-          const capsules = await capsulesRepo.listForAccount(active.id);
-          const existing = findCapsuleForGeminiUrl(capsules, target);
+          const existing = await capsulesRepo.findByGeminiOriginForAccount(
+            active.id,
+            target,
+          );
           if (existing) {
-            router.replace(
-              `/thread/${existing.id}?name=${encodeURIComponent(existing.name)}` as Href,
-            );
+            router.replace({
+              pathname: "/thread/[id]",
+              params: {
+                id: existing.id,
+                name: existing.name,
+              },
+            } as unknown as Href);
             return;
           }
-          const newCap = await capsulesRepo.insertWithThread({
+          const newCap = await capsulesRepo.insertCapsuleOnly({
             accountId: active.id,
             name: suggestedCapsuleNameFromGeminiUrl(target),
-            url: target,
+            url: normalizeGeminiCapsuleRootUrl(target) || target,
           });
-          router.replace(
-            `/thread/${newCap.id}?name=${encodeURIComponent(newCap.name)}` as Href,
-          );
+          router.replace({
+            pathname: "/threads/view",
+            params: {
+              url: target,
+              name: newCap.name,
+            },
+          } as unknown as Href);
         } catch (e) {
           logThreadMessage("gemini.link.cross_capsule.error", {
             target: target.slice(0, 120),
-            error: e instanceof Error ? e.message : String(e),
+            error: formatError(e, "Unknown error."),
           });
-          Alert.alert(
-            "Could not open capsule",
-            e instanceof Error ? e.message : String(e),
-          );
+          alertError(e, "Could not open capsule.", "Could not open capsule");
         }
       })();
     },
@@ -382,19 +448,22 @@ export function ThreadViewScreen() {
   const title = useMemo(() => {
     if (nameParam && nameParam.length > 0) return nameParam;
     if (threadRow?.capsule?.name) return threadRow.capsule.name;
+    if (capsuleRow?.name) return capsuleRow.name;
+    const raw = urlParam?.trim();
+    if (raw) return suggestedCapsuleNameFromGeminiUrl(raw);
     return "Thread";
-  }, [nameParam, threadRow?.capsule?.name]);
+  }, [nameParam, threadRow?.capsule?.name, capsuleRow?.name, urlParam]);
 
   const capsuleHeaderMeta = useMemo(() => {
-    const cap = threadRow?.capsule;
+    const cap = threadRow?.capsule ?? capsuleRow;
     const id = threadId;
     const displayName = title;
     return {
       id,
       name: displayName,
-      avatarUrl: cap?.avatarUrl,
+      avatarIcon: cap?.avatarIcon,
     };
-  }, [threadId, threadRow?.capsule, title]);
+  }, [threadId, threadRow?.capsule, capsuleRow, title]);
 
   const openCapsuleDetail = useCallback(() => {
     if (!capsuleHeaderMeta.id) return;
@@ -407,13 +476,13 @@ export function ThreadViewScreen() {
   const emptyCapsuleForList = useMemo(():
     | MessageListEmptyCapsule
     | undefined => {
-    const cap = threadRow?.capsule;
+    const cap = threadRow?.capsule ?? capsuleRow;
     if (cap) {
       const desc = cap.description?.trim();
       return {
         capsuleId: cap.id,
         name: cap.name,
-        avatarUrl: cap.avatarUrl,
+        avatarIcon: cap.avatarIcon,
         ...(desc ? { description: desc } : {}),
       };
     }
@@ -423,11 +492,17 @@ export function ThreadViewScreen() {
         name: nameParam,
       };
     }
+    const rawUrl = urlParam?.trim();
+    if (rawUrl) {
+      return {
+        capsuleId: `url-${rawUrl.slice(0, 48)}`,
+        name: suggestedCapsuleNameFromGeminiUrl(rawUrl),
+      };
+    }
     return undefined;
-  }, [threadId, threadRow?.capsule, nameParam]);
+  }, [threadId, threadRow?.capsule, capsuleRow, nameParam, urlParam]);
 
-  const headerTitleColor =
-    scheme === "dark" ? appColors.headerTitleDark : appColors.headerTitleLight;
+  const headerTitleColor = headerTitleColorForScheme(scheme);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -447,7 +522,7 @@ export function ThreadViewScreen() {
           <CapsuleAvatar
             capsuleId={capsuleHeaderMeta.id || threadId || "capsule"}
             name={capsuleHeaderMeta.name}
-            uri={capsuleHeaderMeta.avatarUrl}
+            emoji={capsuleHeaderMeta.avatarIcon}
             size={28}
           />
           <Text
@@ -465,7 +540,7 @@ export function ThreadViewScreen() {
       ),
     });
   }, [
-    capsuleHeaderMeta.avatarUrl,
+    capsuleHeaderMeta.avatarIcon,
     capsuleHeaderMeta.id,
     capsuleHeaderMeta.name,
     threadId,
@@ -491,10 +566,18 @@ export function ThreadViewScreen() {
     return isCapsuleRootRequestPath(capsuleUrl, lastMessage);
   }, [lastMessage, capsuleUrl]);
 
+  const visitHomeFooterLabel = useMemo(() => {
+    if (urlParam?.trim()) return visitFooterPrimaryLabel;
+    return requestHomeAsRefresh ? "Revisit home" : "Visit home";
+  }, [urlParam, visitFooterPrimaryLabel, requestHomeAsRefresh]);
+
   const lastExpectsInput =
     lastMessage != null &&
     (lastMessage.status === 10 || lastMessage.status === 11);
-  const showStart = !loadingInitial && messages.length === 0 && !!threadId;
+  const canVisit =
+    Boolean(activeAccount?.id) &&
+    (Boolean(threadId) || Boolean(urlParam?.trim()));
+  const showStart = !loadingInitial && messages.length === 0 && canVisit;
   const showTextComposer = !!threadId && !loadingInitial && lastExpectsInput;
   /** Capsule root fetch when the server is not waiting for INPUT (10 / SENSITIVE_INPUT 11). */
   const showHome =
@@ -553,7 +636,7 @@ export function ThreadViewScreen() {
               });
               void submitMessageFlow("", {
                 requestText: "",
-                displayText: "Visit",
+                displayText: visitFooterPrimaryLabel,
               });
             }}
             style={({ pressed }) => [
@@ -563,12 +646,17 @@ export function ThreadViewScreen() {
                 opacity: !capsuleUrl || flowPending ? 0.45 : pressed ? 0.85 : 1,
               },
             ]}
-            accessibilityLabel="Visit"
+            accessibilityLabel={visitFooterPrimaryLabel}
           >
             {flowPending ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
-              <Text style={styles.startButtonLabel}>Visit</Text>
+              <Text
+                numberOfLines={3}
+                style={[styles.startButtonLabel, styles.footerButtonLabelMultiline]}
+              >
+                {visitFooterPrimaryLabel}
+              </Text>
             )}
           </Pressable>
         </View>
@@ -596,9 +684,7 @@ export function ThreadViewScreen() {
               void submitMessageFlow("", {
                 fromHome: true,
                 requestText: "",
-                displayText: requestHomeAsRefresh
-                  ? "Revisit home"
-                  : "Visit home",
+                displayText: visitHomeFooterLabel,
               });
             }}
             style={({ pressed }) => [
@@ -609,9 +695,7 @@ export function ThreadViewScreen() {
                 opacity: !capsuleUrl || flowPending ? 0.45 : pressed ? 0.72 : 1,
               },
             ]}
-            accessibilityLabel={
-              requestHomeAsRefresh ? "Revisit home" : "Visit home"
-            }
+            accessibilityLabel={visitHomeFooterLabel}
           >
             {flowPending ? (
               <ActivityIndicator color={palette.iconSend} />
@@ -626,12 +710,14 @@ export function ThreadViewScreen() {
                   style={styles.homeButtonIcon}
                 />
                 <Text
+                  numberOfLines={3}
                   style={[
                     styles.homeButtonLabel,
+                    styles.footerButtonLabelMultiline,
                     { color: palette.composerText },
                   ]}
                 >
-                  {requestHomeAsRefresh ? "Revisit home" : "Visit home"}
+                  {visitHomeFooterLabel}
                 </Text>
               </View>
             )}
@@ -656,7 +742,7 @@ export function ThreadViewScreen() {
             void submitMessageFlow("", {
               fromHome: true,
               requestText: "",
-              displayText: requestHomeAsRefresh ? "Revisit home" : "Visit home",
+              displayText: visitHomeFooterLabel,
             });
           }}
           requestHomeAsRefresh={requestHomeAsRefresh}
@@ -697,6 +783,9 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 17,
     fontWeight: "600",
+  },
+  footerButtonLabelMultiline: {
+    textAlign: "center",
   },
   homeButton: {
     borderRadius: 12,

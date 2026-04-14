@@ -9,6 +9,7 @@ import {
   Text,
   TextInput,
   View,
+  type ColorValue,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as yup from "yup";
@@ -60,17 +61,17 @@ export const accountFormValidationSchema = yup.object({
 });
 
 export type AccountFormPalette = {
-  background: string;
-  textPrimary: string;
-  textSecondary: string;
-  separator: string;
-  fieldBg: string;
-  fieldBorder: string;
-  fieldText: string;
-  placeholder: string;
-  error: string;
-  primaryLabel: string;
-  primaryButtonBg: string;
+  background: ColorValue;
+  textPrimary: ColorValue;
+  textSecondary: ColorValue;
+  separator: ColorValue;
+  fieldBg: ColorValue;
+  fieldBorder: ColorValue;
+  fieldText: ColorValue;
+  placeholder: ColorValue;
+  error: ColorValue;
+  primaryLabel: ColorValue;
+  primaryButtonBg: ColorValue;
 };
 
 export type AccountFormProps = {

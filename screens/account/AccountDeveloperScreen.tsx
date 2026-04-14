@@ -13,6 +13,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { notifyLocalDatabaseErased } from "lib/localDatabaseErase";
 import { resetLocalDatabase } from "lib/databaseSetup";
 import { appColors } from "lib/theme/appColors";
+import { alertError } from "utils/error";
 
 const colors = {
   light: {
@@ -55,10 +56,7 @@ export function AccountDeveloperScreen() {
               notifyLocalDatabaseErased();
             } catch (e) {
               console.error("resetLocalDatabase failed", e);
-              Alert.alert(
-                "Could not erase database",
-                e instanceof Error ? e.message : String(e),
-              );
+              alertError(e, "Could not erase database.", "Could not erase database");
             }
           },
         },

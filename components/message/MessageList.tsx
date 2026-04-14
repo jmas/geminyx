@@ -11,16 +11,16 @@ import {
 import {
   ActivityIndicator,
   Dimensions,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
+  type ColorValue,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from "react-native";
-import { avatarHueFromId, initialsFromName } from "utils/avatar";
+import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
 import { usePopupManager } from "react-popup-manager";
 import type { ThreadMessage } from "lib/models/threadMessage";
 import { MessageBodyFullModal } from "components/message/MessageBodyFullModal";
@@ -38,26 +38,26 @@ import {
 import { MessageContextMenuBubble } from "components/message/MessageContextMenuBubble";
 
 export type MessageListPalette = {
-  bubbleIncoming: string;
-  bubbleOutgoing: string;
-  textIncoming: string;
-  textOutgoing: string;
-  timeIncoming: string;
-  timeOutgoing: string;
-  icon: string;
-  linkIncoming: string;
-  linkOutgoing: string;
+  bubbleIncoming: ColorValue;
+  bubbleOutgoing: ColorValue;
+  textIncoming: ColorValue;
+  textOutgoing: ColorValue;
+  timeIncoming: ColorValue;
+  timeOutgoing: ColorValue;
+  icon: ColorValue;
+  linkIncoming: ColorValue;
+  linkOutgoing: ColorValue;
   /** Outlined secondary control under truncated bubbles (full width = bubble). */
-  viewFullBtnBg: string;
-  viewFullBtnBorder: string;
-  viewFullBtnLabel: string;
+  viewFullBtnBg: ColorValue;
+  viewFullBtnBorder: ColorValue;
+  viewFullBtnLabel: ColorValue;
 };
 
 export type MessageListEmptyCapsule = {
   capsuleId: string;
   name: string;
   description?: string;
-  avatarUrl?: string;
+  avatarIcon?: string;
 };
 
 export type MessageListProps = {
@@ -122,8 +122,6 @@ function EmptyCapsuleCard({
   capsule: MessageListEmptyCapsule;
   palette: MessageListPalette;
 }) {
-  const hue = avatarHueFromId(capsule.capsuleId);
-  const initials = initialsFromName(capsule.name);
   const desc = capsule.description?.trim();
 
   return (
@@ -136,11 +134,11 @@ function EmptyCapsuleCard({
         },
       ]}
     >
-      <EmptyCapsuleAvatar
+      <CapsuleAvatar
+        capsuleId={capsule.capsuleId}
         name={capsule.name}
-        uri={capsule.avatarUrl}
-        hue={hue}
-        initials={initials}
+        emoji={capsule.avatarIcon}
+        size={80}
       />
       <Text
         style={[styles.emptyCapsuleName, { color: palette.textIncoming }]}
@@ -156,47 +154,6 @@ function EmptyCapsuleCard({
           {desc}
         </Text>
       ) : null}
-    </View>
-  );
-}
-
-function EmptyCapsuleAvatar({
-  uri,
-  hue,
-  initials,
-  name,
-}: {
-  uri?: string;
-  hue: number;
-  initials: string;
-  name: string;
-}) {
-  const [failed, setFailed] = useState(!uri);
-
-  useEffect(() => {
-    setFailed(!uri);
-  }, [uri]);
-
-  if (!failed && uri) {
-    return (
-      <Image
-        accessibilityLabel={`${name} avatar`}
-        source={{ uri }}
-        style={styles.emptyCapsuleAvatarImage}
-        onError={() => setFailed(true)}
-      />
-    );
-  }
-
-  return (
-    <View
-      style={[
-        styles.emptyCapsuleAvatarFallback,
-        { backgroundColor: `hsl(${hue}, 42%, 46%)` },
-      ]}
-      accessibilityLabel={`${name} avatar`}
-    >
-      <Text style={styles.emptyCapsuleAvatarInitials}>{initials}</Text>
     </View>
   );
 }
@@ -677,23 +634,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 2,
-  },
-  emptyCapsuleAvatarImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-  },
-  emptyCapsuleAvatarFallback: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  emptyCapsuleAvatarInitials: {
-    color: "#ffffff",
-    fontSize: 28,
-    fontWeight: "600",
   },
   emptyCapsuleName: {
     marginTop: 16,

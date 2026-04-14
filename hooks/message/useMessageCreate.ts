@@ -13,6 +13,7 @@ import {
   isGeminiRedirectStatus,
   isGeminiSuccessNonGemtextResource,
   isGeminiTextGeminiResponse,
+  normalizeGeminiCapsuleRootUrl,
   resolveGeminiInputPromptUrl,
   resolveGeminiRedirectTarget,
   resolveGeminiRequestUrl,
@@ -30,6 +31,7 @@ import {
   type SetStateAction,
 } from "react";
 import { Alert } from "react-native";
+import { alertError, formatError } from "utils/error";
 import {
   accountsRepo,
   capsulesRepo,
@@ -90,6 +92,12 @@ export type UseMessageCreateParams = {
   scheduleScrollToEnd: () => void;
   /** Optional hook for parents to refetch local DB–backed UI after mutations. */
   onLocalDataChanged?: () => void | Promise<void>;
+  /**
+   * When `threadId` is empty, first Visit creates a capsule from this Gemini URL
+   * and notifies `onBootstrapThreadId`.
+   */
+  bootstrapGeminiUrl?: string;
+  onBootstrapThreadId?: (capsuleId: string) => void;
 };
 
 function isGeminiClientCertRequiredStatus(code: number): boolean {
@@ -149,7 +157,7 @@ function newLocalMessageId(prefix: "out" | "in"): string {
  * Gemini fetch → persist outgoing + incoming message flow.
  */
 export function useMessageCreate({
-  threadId,
+  threadId: threadIdProp,
   capsuleUrl,
   activeAccountId,
   activeAccountName,
@@ -162,6 +170,8 @@ export function useMessageCreate({
   setMessages,
   scheduleScrollToEnd,
   onLocalDataChanged,
+  bootstrapGeminiUrl,
+  onBootstrapThreadId,
 }: UseMessageCreateParams) {
   const router = useRouter();
 
@@ -171,10 +181,10 @@ export function useMessageCreate({
       if (!active?.id) {
         throw new Error("No active account");
       }
-      return capsulesRepo.insertWithThread({
+      return capsulesRepo.insertCapsuleOnly({
         accountId: active.id,
         name: values.name,
-        avatarUrl: values.avatarUrl,
+        avatarIcon: values.avatarIcon,
         url: values.url,
         description: values.description,
       });
@@ -199,6 +209,36 @@ export function useMessageCreate({
             ? "home"
             : "start"
           : "send";
+
+      let threadId = threadIdProp.trim();
+      if (!threadId && bootstrapGeminiUrl?.trim()) {
+        const bootUrl = bootstrapGeminiUrl.trim();
+        const active = await accountsRepo.getActive();
+        if (!active?.id) {
+          Alert.alert("No account", "Add or select an account first.");
+          return;
+        }
+        try {
+          const existing =
+            await capsulesRepo.findByGeminiOriginForAccount(active.id, bootUrl);
+          const cap =
+            existing ??
+            (await capsulesRepo.insertCapsuleOnly({
+              accountId: active.id,
+              name: suggestedCapsuleNameFromGeminiUrl(bootUrl),
+              url: normalizeGeminiCapsuleRootUrl(bootUrl) || bootUrl,
+            }));
+          await threadsRepo.ensureThreadForCapsule(cap.id);
+          threadId = cap.id;
+          onBootstrapThreadId?.(cap.id);
+        } catch (e) {
+          logThreadMessage("flow.bootstrap.error", {
+            error: formatError(e, "Unknown error."),
+          });
+          alertError(e, "Could not start.", "Could not start");
+          return;
+        }
+      }
 
       if (!threadId) {
         logThreadMessage("flow.skip", { reason: "no_thread_id", flowKind });
@@ -226,6 +266,8 @@ export function useMessageCreate({
         );
         return;
       }
+
+      await threadsRepo.ensureThreadForCapsule(threadId);
 
       const prevList = messagesRef.current;
       const prevLast =
@@ -267,10 +309,10 @@ export function useMessageCreate({
         logThreadMessage("request_url.error", {
           threadId,
           flowKind,
-          error: e instanceof Error ? e.message : String(e),
+          error: formatError(e, "Unknown error."),
         });
         console.error(e);
-        Alert.alert("Request", "Could not build request URL.");
+        alertError(e, "Could not build request URL.", "Request");
         return;
       }
       const outgoingRequestPath = geminiRequestPathForMessage(url, requestUrl);
@@ -497,16 +539,50 @@ export function useMessageCreate({
             isCrossOriginGeminiUrl(target, capsuleUrl)
           ) {
             try {
+              const active = await accountsRepo.getActive();
+              if (!active?.id) {
+                Alert.alert("No account", "Add or select an account first.");
+                return;
+              }
+              const existingCap =
+                await capsulesRepo.findByGeminiOriginForAccount(
+                  active.id,
+                  target,
+                );
+              const normalizedTarget =
+                normalizeGeminiCapsuleRootUrl(target) || target;
               const capName = suggestedCapsuleNameFromGeminiUrl(target);
               logThreadMessage("gemini.redirect.new_capsule.begin", {
                 threadId,
                 flowKind,
                 targetSummary: summarizeRequestUrl(target),
                 capName,
+                existingCapsuleId: existingCap?.id,
               });
+              if (existingCap) {
+                router.replace({
+                  pathname: "/thread/[id]",
+                  params: {
+                    id: existingCap.id,
+                    name: existingCap.name,
+                  },
+                } as unknown as Href);
+                logThreadMessage("gemini.redirect.reuse_capsule", {
+                  capsuleId: existingCap.id,
+                  flowKind,
+                });
+                logThreadMessage("flow.success", {
+                  threadId,
+                  flowKind,
+                  outgoingId,
+                  redirect: true,
+                  reusedCapsule: true,
+                });
+                return;
+              }
               const newCap = await createCapsuleFromVariables({
                 name: capName,
-                url: target,
+                url: normalizedTarget,
               });
               const noticeId = newLocalMessageId("in");
               const noticeSentAt = new Date().toISOString();
@@ -531,9 +607,13 @@ export function useMessageCreate({
                 newCapsuleId: newCap.id,
                 flowKind,
               });
-              router.replace(
-                `/thread/${newCap.id}?name=${encodeURIComponent(newCap.name)}` as Href,
-              );
+              router.replace({
+                pathname: "/threads/view",
+                params: {
+                  url: normalizedTarget,
+                  name: newCap.name,
+                },
+              } as unknown as Href);
               logThreadMessage("flow.success", {
                 threadId,
                 flowKind,
@@ -546,16 +626,12 @@ export function useMessageCreate({
               logThreadMessage("gemini.redirect.new_capsule.error", {
                 threadId,
                 flowKind,
-                error:
-                  redirErr instanceof Error
-                    ? redirErr.message
-                    : String(redirErr),
+                error: formatError(redirErr, "Unknown error."),
               });
-              Alert.alert(
+              alertError(
+                redirErr,
+                "Could not open the other capsule.",
                 "Redirect",
-                redirErr instanceof Error
-                  ? redirErr.message
-                  : "Could not open the other capsule.",
               );
             }
           }
@@ -610,7 +686,7 @@ export function useMessageCreate({
               logThreadMessage("gemini.input.prompt_fetch.error", {
                 threadId,
                 flowKind,
-                error: e instanceof Error ? e.message : String(e),
+                error: formatError(e, "Unknown error."),
               });
             }
           }
@@ -749,11 +825,11 @@ export function useMessageCreate({
           threadId,
           flowKind,
           outgoingId,
-          error: e instanceof Error ? e.message : String(e),
+          error: formatError(e, "Unknown error."),
           stack: e instanceof Error ? e.stack : undefined,
         });
         console.error("Message / Gemini flow failed", e);
-        const errText = e instanceof Error ? e.message : String(e);
+        const errText = formatError(e, "Unknown error.");
         const replyId = newLocalMessageId("in");
         const replySentAt = new Date().toISOString();
         const body =
@@ -804,9 +880,11 @@ export function useMessageCreate({
     [
       activeAccountId,
       activeAccountName,
+      bootstrapGeminiUrl,
       capsuleUrl,
       createCapsuleFromVariables,
-      threadId,
+      onBootstrapThreadId,
+      threadIdProp,
       threadClientCertShareAllowed,
       geminiTls,
       onLocalDataChanged,

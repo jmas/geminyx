@@ -5,7 +5,6 @@ import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { useCallback, useLayoutEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   StyleSheet,
   Text,
@@ -22,12 +21,13 @@ import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import { useAccountActive } from "hooks/account/useAccountActive";
 import { queryKeys } from "lib/queryKeys";
 import {
-  appColors,
+  headerTitleColorForScheme,
   navigationChromeForScheme,
   rootScreenBackgroundForScheme,
   systemBlueForScheme,
 } from "lib/theme/appColors";
-import { capsulesRepo } from "repositories";
+import { categoriesRepo, capsulesRepo } from "repositories";
+import { alertError } from "utils/error";
 import { firstParam } from "utils/searchParams";
 
 export function CapsuleEditScreen() {
@@ -37,8 +37,7 @@ export function CapsuleEditScreen() {
   const palette: CapsuleFormModalPalette = selectCapsuleUiPalette(scheme);
   const bg = rootScreenBackgroundForScheme(scheme);
   const tint = systemBlueForScheme(scheme);
-  const titleColor =
-    scheme === "dark" ? appColors.headerTitleDark : appColors.headerTitleLight;
+  const titleColor = headerTitleColorForScheme(scheme);
 
   const params = useLocalSearchParams<{ id: string }>();
   const capsuleId = firstParam(params.id) ?? "";
@@ -46,6 +45,29 @@ export function CapsuleEditScreen() {
   const [savePending, setSavePending] = useState(false);
   const queryClient = useQueryClient();
   const { data: activeAccount, isPending: activePending } = useAccountActive();
+
+  const {
+    data: categories = [],
+    isPending: categoriesPending,
+  } = useQuery({
+    queryKey: [
+      ...queryKeys.categories.listForActive(),
+      activeAccount?.id ?? "none",
+    ],
+    queryFn: async () => {
+      if (!activeAccount?.id) return [];
+      return categoriesRepo.listOrdered(activeAccount.id);
+    },
+    enabled: Boolean(capsuleId) && !activePending && Boolean(activeAccount?.id),
+  });
+
+  const categoryOptions = useMemo(
+    () => [
+      { id: "", name: "General" },
+      ...categories.map((c) => ({ id: c.id, name: c.name })),
+    ],
+    [categories],
+  );
 
   const {
     data: capsule,
@@ -90,9 +112,10 @@ export function CapsuleEditScreen() {
   const initialValues: CapsuleFormValues = useMemo(
     () => ({
       name: capsule?.name ?? "",
-      avatarUrl: capsule?.avatarUrl ?? "",
+      avatarIcon: capsule?.avatarIcon ?? "",
       url: capsule?.url ?? "",
       description: capsule?.description ?? "",
+      categoryId: capsule?.categoryId ?? "",
     }),
     [capsule],
   );
@@ -110,9 +133,10 @@ export function CapsuleEditScreen() {
         setSavePending(true);
         await capsulesRepo.patch(capsuleId, {
           name: values.name.trim(),
-          avatarUrl: values.avatarUrl.trim(),
+          avatarIcon: values.avatarIcon.trim(),
           url: values.url.trim(),
           description: values.description.trim(),
+          categoryId: values.categoryId.trim() || null,
         });
         await queryClient.invalidateQueries({
           queryKey: queryKeys.capsules.detail(capsuleId),
@@ -123,10 +147,7 @@ export function CapsuleEditScreen() {
         router.replace({ pathname: "/capsule/[id]", params: { id: capsuleId } } as unknown as Href);
       } catch (e) {
         console.error("updateCapsule failed", e);
-        Alert.alert(
-          "Could not save capsule",
-          e instanceof Error ? e.message : String(e),
-        );
+        alertError(e, "Could not save capsule.", "Could not save capsule");
       } finally {
         setSavePending(false);
         setSubmitting(false);
@@ -167,6 +188,9 @@ export function CapsuleEditScreen() {
         isPending={savePending}
         initialValues={initialValues}
         submitLabel="Save"
+        autoNameFromUrl={false}
+        categoryOptions={categoryOptions}
+        categoryOptionsLoading={categoriesPending}
         onCancel={onCancel}
         onSubmit={handleSubmit}
       />

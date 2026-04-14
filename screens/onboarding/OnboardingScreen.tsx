@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ComponentProps } from "react";
 import {
   Dimensions,
@@ -10,14 +10,20 @@ import {
   NativeScrollEvent,
   NativeSyntheticEvent,
   Platform,
+  PlatformColor,
   Pressable,
   StyleSheet,
   Text,
   useColorScheme,
   View,
+  type ColorValue,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { appColors, systemBlueForScheme } from "lib/theme/appColors";
+import {
+  appColors,
+  iosIntroScreenPalette,
+  systemBlueForScheme,
+} from "lib/theme/appColors";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -74,7 +80,10 @@ export function OnboardingScreen({ onFinishIntro }: OnboardingScreenProps) {
   const [index, setIndex] = useState(0);
   const totalSlides = INTRO_SLIDES.length;
 
-  const palette = scheme === "dark" ? colors.dark : colors.light;
+  const palette = useMemo(() => {
+    if (Platform.OS === "ios") return iosIntroScreenPalette();
+    return scheme === "dark" ? colors.dark : colors.light;
+  }, [scheme]);
 
   const onMomentumScrollEnd = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -185,14 +194,10 @@ export function OnboardingScreen({ onFinishIntro }: OnboardingScreenProps) {
             onPress={goBack}
             disabled={isFirst}
             style={({ pressed }) => [
-              styles.backBtn,
+              styles.footerTextBtn,
               {
-                borderColor: palette.separator,
-                opacity: isFirst ? 0 : 1,
+                opacity: isFirst ? 0 : pressed ? 0.55 : 1,
               },
-              pressed &&
-                !isFirst &&
-                { backgroundColor: palette.backPressed },
             ]}
             accessibilityLabel="Back"
           >
@@ -222,25 +227,37 @@ export function OnboardingScreen({ onFinishIntro }: OnboardingScreenProps) {
             <Pressable
               onPress={onFinishIntro}
               style={({ pressed }) => [
-                styles.nextBtn,
-                { backgroundColor: systemBlueForScheme(scheme) },
-                pressed && { opacity: 0.88 },
+                styles.footerTextBtn,
+                pressed && { opacity: 0.55 },
               ]}
               accessibilityLabel="Get started"
             >
-              <Text style={styles.nextLabel}>Get started</Text>
+              <Text
+                style={[
+                  styles.primaryLabel,
+                  { color: systemBlueForScheme(scheme) },
+                ]}
+              >
+                Get started
+              </Text>
             </Pressable>
           ) : (
             <Pressable
               onPress={goNext}
               style={({ pressed }) => [
-                styles.nextBtn,
-                { backgroundColor: systemBlueForScheme(scheme) },
-                pressed && { opacity: 0.88 },
+                styles.footerTextBtn,
+                pressed && { opacity: 0.55 },
               ]}
               accessibilityLabel="Next"
             >
-              <Text style={styles.nextLabel}>Next</Text>
+              <Text
+                style={[
+                  styles.primaryLabel,
+                  { color: systemBlueForScheme(scheme) },
+                ]}
+              >
+                Next
+              </Text>
             </Pressable>
           )}
         </View>
@@ -258,12 +275,16 @@ function OnboardingIllustration({
   scheme: "light" | "dark" | null | undefined;
   image?: ImageSourcePropType;
   name: IonIconName;
-  tint: string;
+  tint: ColorValue;
 }) {
   const plate = styles.illustrationPlate;
   const iconSize = 108;
   const plateBg =
-    scheme === "dark" ? "rgba(10, 132, 255, 0.14)" : "rgba(0, 122, 255, 0.11)";
+    Platform.OS === "ios"
+      ? PlatformColor("tertiarySystemFill")
+      : scheme === "dark"
+        ? "rgba(10, 132, 255, 0.14)"
+        : "rgba(0, 122, 255, 0.11)";
 
   if (image != null) {
     return (
@@ -291,7 +312,6 @@ const colors = {
     textPrimary: "#000000",
     textSecondary: "#3c3c43",
     separator: "rgba(60, 60, 67, 0.29)",
-    backPressed: "rgba(0, 0, 0, 0.04)",
     dotInactive: "rgba(120, 120, 128, 0.35)",
   },
   dark: {
@@ -299,7 +319,6 @@ const colors = {
     textPrimary: "#f2f2f7",
     textSecondary: "rgba(235, 235, 245, 0.75)",
     separator: "rgba(255, 255, 255, 0.12)",
-    backPressed: "rgba(255, 255, 255, 0.06)",
     dotInactive: "rgba(235, 235, 245, 0.25)",
   },
 } as const;
@@ -372,28 +391,20 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
   },
-  backBtn: {
+  footerTextBtn: {
     minWidth: 96,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: "center",
+    minHeight: 44,
     justifyContent: "center",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 4,
   },
   backLabel: {
     fontSize: 17,
-    fontWeight: "600",
+    fontWeight: "400",
   },
-  nextBtn: {
-    minWidth: 96,
-    height: 44,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  nextLabel: {
-    color: "#ffffff",
+  primaryLabel: {
     fontSize: 17,
-    fontWeight: "600",
+    fontWeight: "700",
   },
 });

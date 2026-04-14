@@ -6,11 +6,16 @@ export type { Capsule } from "lib/models/capsule";
 
 export type CapsuleCreateVariables = {
   name: string;
-  avatarUrl?: string;
+  avatarIcon?: string;
   url?: string;
   description?: string;
 };
 
 export type CapsuleUpdateVariables = CapsulePatch;
 
-export { SEED_CAPSULES } from "lib/resources/seedCapsules";
+export {
+  SEED_CAPSULES,
+  SEED_CAPSULE_CATEGORIES,
+  SEED_CAPSULE_TEMPLATES,
+} from "lib/resources/seedCapsules";
+export type { SeedCapsuleTemplate } from "lib/resources/seedCapsules";

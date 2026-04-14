@@ -17,7 +17,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import type { Account } from "lib/models/account";
 import { queryKeys } from "lib/queryKeys";
-import { systemBlueForScheme } from "lib/theme/appColors";
+import {
+  iosAccountSwitchPalette,
+  systemBlueForScheme,
+} from "lib/theme/appColors";
 import { accountsRepo } from "repositories";
 import { avatarHueFromId, initialsFromName } from "utils/avatar";
 
@@ -34,6 +37,10 @@ const colors = {
   },
 } as const;
 
+type SwitchPalette =
+  | (typeof colors)[keyof typeof colors]
+  | ReturnType<typeof iosAccountSwitchPalette>;
+
 export type AccountSwitchModalProps = {
   visible: boolean;
   onClose: () => void;
@@ -44,7 +51,12 @@ export function AccountSwitchModal({ visible, onClose }: AccountSwitchModalProps
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
   const sheet = selectCapsuleUiPalette(scheme);
-  const palette = scheme === "dark" ? colors.dark : colors.light;
+  const palette: SwitchPalette =
+    Platform.OS === "ios"
+      ? iosAccountSwitchPalette()
+      : scheme === "dark"
+        ? colors.dark
+        : colors.light;
   const blue = systemBlueForScheme(scheme);
 
   const { data: accountsRaw = [], isFetching: loading } = useQuery({

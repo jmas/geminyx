@@ -114,6 +114,13 @@ export default function RootLayout() {
                 }}
               />
               <Stack.Screen
+                name="threads/view"
+                options={{
+                  title: "Thread",
+                  headerBackTitle: "Back",
+                }}
+              />
+              <Stack.Screen
                 name="capsule/[id]"
                 options={{
                   headerBackTitle: "Back",
