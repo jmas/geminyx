@@ -49,7 +49,6 @@ export function AccountCreateScreen({
         await accountsRepo.insert({
           name: values.name,
           email: values.email.trim() || undefined,
-          avatarUrl: values.avatarUrl.trim() || undefined,
           capsuleUrl: values.capsuleUrl.trim() || undefined,
           isActive: true,
         });

@@ -19,6 +19,7 @@ import {
   type ColorValue,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useTranslation } from "react-i18next";
 import { iosIntroScreenPalette, systemBlueForScheme } from "lib/theme/appColors";
 import { semanticUiPaletteForScheme } from "lib/theme/semanticUi";
 
@@ -39,43 +40,46 @@ type IntroSlide = {
   illustration: IonIconName;
 };
 
-const INTRO_SLIDES: IntroSlide[] = [
-  {
-    key: "welcome",
-    title: "Welcome to Geminyx",
-    body: "Geminyx is a messenger-like browser for the small web, built around Gemini Protocol capsules and lightweight pages.",
-    illustration: "planet-outline",
-  },
-  {
-    key: "capsules",
-    title: "Capsules",
-    body: "Capsules are like tiny websites. Follow links to open another page in the same capsule—each page appears as a message in your thread.",
-    illustration: "cube-outline",
-  },
-  {
-    key: "threads",
-    title: "Threads",
-    body: "A thread is your history with one capsule: a single conversation where everything you have exchanged stays in order.",
-    illustration: "chatbubbles-outline",
-  },
-  {
-    key: "accounts",
-    title: "Accounts",
-    body: "Accounts live on your device. You can have more than one; capsules and threads belong to the active account. Export or import everything as one file to move to another device.",
-    illustration: "shield-checkmark-outline",
-  },
-];
-
 export type OnboardingScreenProps = {
   onFinishIntro: () => void;
 };
 
 export function OnboardingScreen({ onFinishIntro }: OnboardingScreenProps) {
+  const { t } = useTranslation();
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
   const flatListRef = useRef<FlatList<IntroSlide>>(null);
   const [index, setIndex] = useState(0);
-  const totalSlides = INTRO_SLIDES.length;
+  const introSlides = useMemo(
+    (): IntroSlide[] => [
+      {
+        key: "welcome",
+        title: t("onboarding.welcomeTitle"),
+        body: t("onboarding.welcomeBody"),
+        illustration: "planet-outline",
+      },
+      {
+        key: "capsules",
+        title: t("onboarding.capsulesTitle"),
+        body: t("onboarding.capsulesBody"),
+        illustration: "cube-outline",
+      },
+      {
+        key: "threads",
+        title: t("onboarding.threadsTitle"),
+        body: t("onboarding.threadsBody"),
+        illustration: "chatbubbles-outline",
+      },
+      {
+        key: "accounts",
+        title: t("onboarding.accountsTitle"),
+        body: t("onboarding.accountsBody"),
+        illustration: "shield-checkmark-outline",
+      },
+    ],
+    [t],
+  );
+  const totalSlides = introSlides.length;
 
   const palette = useMemo(() => {
     if (Platform.OS === "ios") return iosIntroScreenPalette();
@@ -158,7 +162,7 @@ export function OnboardingScreen({ onFinishIntro }: OnboardingScreenProps) {
       <FlatList
         ref={flatListRef}
         style={styles.list}
-        data={INTRO_SLIDES}
+        data={introSlides}
         keyExtractor={(item) => item.key}
         horizontal
         pagingEnabled
@@ -203,15 +207,15 @@ export function OnboardingScreen({ onFinishIntro }: OnboardingScreenProps) {
                 opacity: isFirst ? 0 : pressed ? 0.55 : 1,
               },
             ]}
-            accessibilityLabel="Back"
+            accessibilityLabel={t("common.back")}
           >
             <Text style={[styles.backLabel, { color: palette.textPrimary }]}>
-              Back
+              {t("common.back")}
             </Text>
           </Pressable>
 
-          <View style={styles.dots} accessibilityLabel="Onboarding progress">
-            {INTRO_SLIDES.map((slide, i) => (
+          <View style={styles.dots} accessibilityLabel={t("onboarding.progress")}>
+            {introSlides.map((slide, i) => (
               <View
                 key={slide.key}
                 style={[
@@ -234,7 +238,7 @@ export function OnboardingScreen({ onFinishIntro }: OnboardingScreenProps) {
                 styles.footerTextBtn,
                 pressed && { opacity: 0.55 },
               ]}
-              accessibilityLabel="Get started"
+              accessibilityLabel={t("onboarding.getStarted")}
             >
               <Text
                 style={[
@@ -242,7 +246,7 @@ export function OnboardingScreen({ onFinishIntro }: OnboardingScreenProps) {
                   { color: systemBlueForScheme(scheme) },
                 ]}
               >
-                Get started
+                {t("onboarding.getStarted")}
               </Text>
             </Pressable>
           ) : (
@@ -252,7 +256,7 @@ export function OnboardingScreen({ onFinishIntro }: OnboardingScreenProps) {
                 styles.footerTextBtn,
                 pressed && { opacity: 0.55 },
               ]}
-              accessibilityLabel="Next"
+              accessibilityLabel={t("common.next")}
             >
               <Text
                 style={[
@@ -260,7 +264,7 @@ export function OnboardingScreen({ onFinishIntro }: OnboardingScreenProps) {
                   { color: systemBlueForScheme(scheme) },
                 ]}
               >
-                Next
+                {t("common.next")}
               </Text>
             </Pressable>
           )}

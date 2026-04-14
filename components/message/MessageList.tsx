@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   Dimensions,
@@ -23,6 +24,8 @@ import {
 import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
 import { usePopupManager } from "react-popup-manager";
 import type { ThreadMessage } from "lib/models/threadMessage";
+import { BlobViewModal } from "components/message/BlobViewModal";
+import { MessageAttachmentBubble } from "components/message/MessageAttachmentBubble";
 import { MessageBodyFullModal } from "components/message/MessageBodyFullModal";
 import {
   GemtextMessageBody,
@@ -30,6 +33,7 @@ import {
   type IncomingGemtextChrome,
 } from "components/message/GemtextMessageBody";
 import { geminiDocumentBaseUrlForMessage } from "lib/models/gemini";
+import { formatByteCount } from "utils/formatBytes";
 import { formatMessageTime } from "utils/formatMessageTime";
 import {
   prepareTruncatedGemtextPreview,
@@ -167,6 +171,7 @@ function MessageBubble({
   onGemtextLink,
   geminiLinksDisabled,
   onViewFull,
+  onOpenBlob,
   onMessageRefetch,
   getMessageRefetchMenuAction,
 }: {
@@ -178,11 +183,13 @@ function MessageBubble({
   onGemtextLink?: (action: GemtextLinkAction, linkLabel: string) => void;
   geminiLinksDisabled?: boolean;
   onViewFull: (ctx: ViewFullMessageContext) => void;
+  onOpenBlob?: (message: ThreadMessage) => void;
   onMessageRefetch?: (message: ThreadMessage) => void;
   getMessageRefetchMenuAction?: (
     message: ThreadMessage,
   ) => { title: string; systemIcon: string };
 }) {
+  const { t } = useTranslation();
   const outgoing = message.isOutgoing;
   const isError =
     !outgoing && message.status !== undefined && message.status >= 40;
@@ -206,20 +213,19 @@ function MessageBubble({
           : "";
   const displayBodyTrim = displayBody.trim();
   const blobRefMatch = BLOB_REF_BODY.exec(bodyTrim);
-  const isBlobPointer =
-    Boolean(
-      message.blobId &&
-        blobRefMatch &&
-        blobRefMatch[1] === message.blobId,
-    );
+  const isBlobPointer = Boolean(
+    message.blobId &&
+      blobRefMatch &&
+      blobRefMatch[1] === message.blobId,
+  );
+  const blobByteLen =
+    message.blobContentLength ?? message.contentLength;
   const placeholder =
-    message.blobId && !isBlobPointer
-      ? message.contentLength > 0
-        ? `[Attachment · ${message.contentLength} bytes]`
-        : "[Attachment]"
-      : message.contentLength > 0 && bodyTrim.length === 0
-        ? `(${message.contentLength} bytes)`
-        : "";
+    !message.blobId &&
+    message.contentLength > 0 &&
+    bodyTrim.length === 0
+      ? `(${formatByteCount(message.contentLength)})`
+      : "";
 
   const docBaseUrl = geminiDocumentBaseUrlForMessage(
     geminiLinkBaseUrl,
@@ -232,20 +238,34 @@ function MessageBubble({
     : displayBody;
 
   const showViewFullUnderBubble =
-    !isBlobPointer && displayBodyTrim.length > 0 && gemtextTruncated;
+    !message.blobId &&
+    !isBlobPointer &&
+    displayBodyTrim.length > 0 &&
+    gemtextTruncated;
 
   const refetchMenu =
     getMessageRefetchMenuAction?.(message) ?? {
-      title: "Revisit",
+      title: t("thread.revisit"),
       systemIcon: "arrow.clockwise",
     };
 
   const bubbleCard = (
     <View style={[styles.bubble, { backgroundColor: bubbleBg }]}>
-      {isBlobPointer ? (
-        <Text selectable style={[styles.messageText, { color: textColor }]}>
-          [blob: {message.blobId}] · {message.contentLength} bytes
-        </Text>
+      {message.blobId ? (
+        <MessageAttachmentBubble
+          mimeType={message.blobMimeType}
+          byteLength={blobByteLen}
+          fileName={message.blobFileName}
+          outgoing={outgoing}
+          textColor={textColor}
+          mutedColor={timeColor}
+          onPress={
+            isBlobPointer && onOpenBlob
+              ? () => onOpenBlob(message)
+              : undefined
+          }
+          pending={!isBlobPointer}
+        />
       ) : displayBodyTrim.length > 0 ? (
         <GemtextMessageBody
           body={gemtextDisplayBody}
@@ -385,6 +405,15 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
         palette.textIncoming,
         popupManager,
       ],
+    );
+
+    const openBlobMessageModal = useCallback(
+      (message: ThreadMessage) => {
+        const id = message.blobId?.trim();
+        if (!id) return;
+        popupManager.open(BlobViewModal, { blobId: id });
+      },
+      [popupManager],
     );
 
     useImperativeHandle(
@@ -551,6 +580,7 @@ export const MessageList = forwardRef<MessageListHandle, MessageListProps>(
               onGemtextLink={onGemtextLink}
               geminiLinksDisabled={geminiLinksDisabled}
               onViewFull={openFullMessageModal}
+              onOpenBlob={openBlobMessageModal}
               onMessageRefetch={onMessageRefetch}
               getMessageRefetchMenuAction={getMessageRefetchMenuAction}
             />

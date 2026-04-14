@@ -218,30 +218,21 @@ export function CategoryManageModal({
       onRequestClose={dismiss}
     >
       <View
-        style={[
-          styles.root,
-          { backgroundColor: palette.background, paddingBottom: insets.bottom },
-        ]}
+        style={[styles.root, { backgroundColor: palette.background }]}
       >
         <View style={styles.grabberWrap}>
           <View
             style={[styles.grabber, { backgroundColor: palette.sheetHandle }]}
           />
         </View>
-        <View style={styles.headerRow}>
-          <Text style={[styles.title, { color: palette.sheetTitle }]}>
-            Categories
-          </Text>
-          <Pressable
-            onPress={dismiss}
-            hitSlop={12}
-            style={({ pressed }) => [pressed && { opacity: 0.55 }]}
-            accessibilityLabel="Done"
-          >
-            <Text style={[styles.done, { color: tint }]}>Done</Text>
-          </Pressable>
-        </View>
+        <Text
+          style={[styles.title, { color: palette.sheetTitle }]}
+          accessibilityRole="header"
+        >
+          Categories
+        </Text>
 
+        <View style={styles.body}>
         <Text style={[styles.hint, { color: palette.textSecondary }]}>
           General is the default for capsules without a category. It is not listed
           here.
@@ -279,9 +270,12 @@ export function CategoryManageModal({
         </View>
 
         {isPending ? (
-          <ActivityIndicator style={styles.loader} color={tint} />
+          <View style={styles.loadingArea}>
+            <ActivityIndicator color={tint} />
+          </View>
         ) : (
           <FlatList
+            style={styles.list}
             data={categories}
             keyExtractor={(item) => item.id}
             contentContainerStyle={styles.listContent}
@@ -398,6 +392,30 @@ export function CategoryManageModal({
             }}
           />
         )}
+        </View>
+
+        <View
+          style={[
+            styles.footer,
+            {
+              borderTopColor: palette.separator,
+              paddingBottom: Math.max(insets.bottom, 12),
+              backgroundColor: palette.background,
+            },
+          ]}
+        >
+          <Pressable
+            onPress={dismiss}
+            style={({ pressed }) => [
+              styles.doneBtn,
+              pressed && { opacity: 0.55 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Done"
+          >
+            <Text style={[styles.doneLabel, { color: tint }]}>Done</Text>
+          </Pressable>
+        </View>
       </View>
     </Modal>
   );
@@ -417,18 +435,40 @@ const styles = StyleSheet.create({
     height: 5,
     borderRadius: 3,
   },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
   title: {
     fontSize: 20,
     fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 8,
+    paddingHorizontal: 20,
   },
-  done: {
+  body: {
+    flex: 1,
+    minHeight: 0,
+  },
+  loadingArea: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 24,
+  },
+  list: {
+    flex: 1,
+  },
+  footer: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  doneBtn: {
+    minHeight: 44,
+    minWidth: 120,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  doneLabel: {
     fontSize: 17,
     fontWeight: "600",
   },
@@ -455,9 +495,6 @@ const styles = StyleSheet.create({
   },
   addBtn: {
     padding: 4,
-  },
-  loader: {
-    marginTop: 24,
   },
   listContent: {
     paddingBottom: 24,

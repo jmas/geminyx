@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useHeaderHeight } from "@react-navigation/elements";
+import { HeaderButton, useHeaderHeight } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
@@ -11,7 +11,12 @@ import {
   type MessageListHandle,
 } from "components/message/MessageList";
 import { BlockingProgressModal } from "components/ui/BlockingProgressModal";
-import { useLocalSearchParams, useRouter, type Href } from "expo-router";
+import {
+  useLocalSearchParams,
+  usePathname,
+  useRouter,
+  type Href,
+} from "expo-router";
 import { useAccountActive } from "hooks/account/useAccountActive";
 import { useMessageCreate } from "hooks/message/useMessageCreate";
 import type { ThreadMessage } from "lib/models/threadMessage";
@@ -20,13 +25,12 @@ import {
   geminiOriginsMatch,
   geminiPathnameForVisitButton,
   isCapsuleRootRequestPath,
-  normalizeGeminiCapsuleRootUrl,
   suggestedCapsuleNameFromGeminiUrl,
   truncateForVisitButtonLabel,
 } from "lib/models/gemini";
 import { queryKeys } from "lib/queryKeys";
-import { MESSAGES_PAGE_SIZE } from "lib/resources/messages";
-import { headerTitleColorForScheme } from "lib/theme/appColors";
+import { MESSAGES_PAGE_SIZE } from "repositories";
+import { destructiveTintColor, headerTitleColorForScheme } from "lib/theme/appColors";
 import { threadConversationPaletteForScheme } from "lib/theme/semanticUi";
 import {
   useCallback,
@@ -36,6 +40,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
   Alert,
@@ -55,6 +60,7 @@ import { firstParam } from "utils/searchParams";
 import { logThreadMessage } from "utils/threadMessageLog";
 
 export function ThreadViewScreen() {
+  const { t } = useTranslation();
   const navigation = useNavigation();
   const router = useRouter();
   const headerHeight = useHeaderHeight();
@@ -64,9 +70,12 @@ export function ThreadViewScreen() {
   const hasMoreOlderRef = useRef(false);
   const loadingOlderRef = useRef(false);
   const params = useLocalSearchParams<{ id?: string; name?: string; url?: string }>();
+  const pathname = usePathname();
   const routeCapsuleId = firstParam(params.id) ?? "";
   const nameParam = firstParam(params.name);
   const urlParam = firstParam(params.url);
+  const isCapsulesCreateRoute =
+    pathname === "/capsules/create" || pathname.endsWith("/capsules/create");
   const scheme = useColorScheme();
   const palette = useMemo(
     () => threadConversationPaletteForScheme(scheme),
@@ -94,15 +103,38 @@ export function ThreadViewScreen() {
   useEffect(() => {
     if (routeCapsuleId || !urlParam?.trim() || !activeAccount?.id) return;
     let cancelled = false;
+    const trimmedUrl = urlParam.trim();
     void capsulesRepo
-      .findByGeminiOriginForAccount(activeAccount.id, urlParam.trim())
+      .findByGeminiOriginForAccount(activeAccount.id, trimmedUrl)
       .then((found) => {
-        if (!cancelled && found) setResolvedCapsuleId(found.id);
+        if (cancelled) return;
+        if (found) {
+          setResolvedCapsuleId(found.id);
+          return;
+        }
+        const onThreadsView =
+          pathname === "/threads/view" || pathname.endsWith("/threads/view");
+        if (onThreadsView) {
+          router.replace({
+            pathname: "/capsules/create",
+            params: {
+              url: trimmedUrl,
+              ...(nameParam ? { name: nameParam } : {}),
+            },
+          } as unknown as Href);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [routeCapsuleId, urlParam, activeAccount?.id]);
+  }, [
+    routeCapsuleId,
+    urlParam,
+    activeAccount?.id,
+    pathname,
+    nameParam,
+    router,
+  ]);
 
   const threadId = resolvedCapsuleId;
 
@@ -270,7 +302,9 @@ export function ThreadViewScreen() {
     scheduleScrollToEnd,
     onLocalDataChanged: refreshThreadContext,
     bootstrapGeminiUrl:
-      !threadId && urlParam?.trim() ? urlParam.trim() : undefined,
+      isCapsulesCreateRoute && !threadId && urlParam?.trim()
+        ? urlParam.trim()
+        : undefined,
     onBootstrapThreadId: setResolvedCapsuleId,
   });
 
@@ -286,13 +320,13 @@ export function ThreadViewScreen() {
   const onMessageRefetch = useCallback(
     (message: ThreadMessage) => {
       if (flowPending) {
-        Alert.alert("Busy", "Please wait for the current request to finish.");
+        Alert.alert(t("common.busy"), t("thread.busyMsg"));
         return;
       }
       if (!capsuleUrl.trim()) {
         Alert.alert(
-          "No capsule URL",
-          "Add a Gemini URL to this capsule to fetch.",
+          t("thread.noCapsuleUrlTitle"),
+          t("thread.noCapsuleUrlBody"),
         );
         return;
       }
@@ -300,18 +334,24 @@ export function ThreadViewScreen() {
       const isRevisit = isCapsuleRootRequestPath(capsuleUrl, message);
       void submitMessageFlow("", {
         fetchUrl,
-        ...(isRevisit ? {} : { displayText: "Revisit" }),
+        ...(isRevisit ? {} : { displayText: t("thread.revisit") }),
       });
     },
-    [capsuleUrl, flowPending, submitMessageFlow],
+    [capsuleUrl, flowPending, submitMessageFlow, t],
   );
 
   const getMessageRefetchMenuAction = useCallback(
     (message: ThreadMessage) =>
       isCapsuleRootRequestPath(capsuleUrl, message)
-        ? { title: "Revisit home" as const, systemIcon: "house" as const }
-        : { title: "Revisit" as const, systemIcon: "arrow.clockwise" as const },
-    [capsuleUrl],
+        ? {
+            title: t("thread.revisitHome"),
+            systemIcon: "house" as const,
+          }
+        : {
+            title: t("thread.revisit"),
+            systemIcon: "arrow.clockwise" as const,
+          },
+    [capsuleUrl, t],
   );
 
   const onGemtextLink = useCallback(
@@ -323,10 +363,10 @@ export function ThreadViewScreen() {
             if (supported) {
               await Linking.openURL(action.url);
             } else {
-              Alert.alert("Cannot open link", action.url);
+              Alert.alert(t("thread.cannotOpenLink"), action.url);
             }
           } catch (e) {
-            alertError(e, "Could not open link.", "Could not open link");
+            alertError(e, t("thread.openLinkError"), t("thread.openLinkError"));
           }
         })();
         return;
@@ -345,7 +385,7 @@ export function ThreadViewScreen() {
             queryFn: () => accountsRepo.getActive(),
           });
           if (!active?.id) {
-            Alert.alert("No account", "Add or select an account first.");
+            Alert.alert(t("thread.noAccountTitle"), t("thread.noAccountBody"));
             return;
           }
           const existing = await capsulesRepo.findByGeminiOriginForAccount(
@@ -362,16 +402,11 @@ export function ThreadViewScreen() {
             } as unknown as Href);
             return;
           }
-          const newCap = await capsulesRepo.insertCapsuleOnly({
-            accountId: active.id,
-            name: suggestedCapsuleNameFromGeminiUrl(target),
-            url: normalizeGeminiCapsuleRootUrl(target) || target,
-          });
           router.replace({
-            pathname: "/threads/view",
+            pathname: "/capsules/create",
             params: {
               url: target,
-              name: newCap.name,
+              name: suggestedCapsuleNameFromGeminiUrl(target),
             },
           } as unknown as Href);
         } catch (e) {
@@ -379,11 +414,11 @@ export function ThreadViewScreen() {
             target: target.slice(0, 120),
             error: formatError(e, "Unknown error."),
           });
-          alertError(e, "Could not open capsule.", "Could not open capsule");
+          alertError(e, t("thread.openCapsuleError"), t("thread.openCapsuleError"));
         }
       })();
     },
-    [capsuleUrl, queryClient, router, submitMessageFlow],
+    [capsuleUrl, queryClient, router, submitMessageFlow, t],
   );
 
   const title = useMemo(() => {
@@ -392,8 +427,52 @@ export function ThreadViewScreen() {
     if (capsuleRow?.name) return capsuleRow.name;
     const raw = urlParam?.trim();
     if (raw) return suggestedCapsuleNameFromGeminiUrl(raw);
-    return "Thread";
-  }, [nameParam, threadRow?.capsule?.name, capsuleRow?.name, urlParam]);
+    return t("thread.fallbackTitle");
+  }, [nameParam, threadRow?.capsule?.name, capsuleRow?.name, urlParam, t]);
+
+  const confirmDeleteThread = useCallback(() => {
+    if (!threadId || flowPending) return;
+    const display = title.trim();
+    Alert.alert(
+      t("thread.deleteTitle"),
+      display.length > 0
+        ? t("thread.deleteMsgNamed", { name: display })
+        : t("thread.deleteMsgGeneric"),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("common.delete"),
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              try {
+                await threadsRepo.deleteConversation(threadId);
+                await queryClient.invalidateQueries({
+                  queryKey: queryKeys.threads.listForActive(),
+                });
+                await queryClient.invalidateQueries({
+                  queryKey: queryKeys.capsules.listForActive(),
+                });
+                await queryClient.invalidateQueries({
+                  queryKey: queryKeys.threads.detail(threadId),
+                });
+                await queryClient.invalidateQueries({
+                  queryKey: queryKeys.capsules.detail(threadId),
+                });
+                router.back();
+              } catch (e) {
+                console.error(e);
+                Alert.alert(
+                  t("thread.deleteErrorTitle"),
+                  t("thread.deleteErrorBody"),
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
+  }, [flowPending, queryClient, router, threadId, title, t]);
 
   const capsuleHeaderMeta = useMemo(() => {
     const cap = threadRow?.capsule ?? capsuleRow;
@@ -446,7 +525,31 @@ export function ThreadViewScreen() {
   const headerTitleColor = headerTitleColorForScheme(scheme);
 
   useLayoutEffect(() => {
+    const deleteIconSize = 24;
     navigation.setOptions({
+      headerRightContainerStyle: { paddingRight: 8 },
+      headerRight:
+        threadId.length > 0
+          ? () => (
+              <HeaderButton
+                onPress={confirmDeleteThread}
+                disabled={flowPending}
+                accessibilityLabel={t("thread.a11yDeleteChat")}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={deleteIconSize}
+                  color={destructiveTintColor()}
+                  style={[
+                    Platform.OS === "ios"
+                      ? { lineHeight: deleteIconSize }
+                      : undefined,
+                    flowPending ? { opacity: 0.45 } : undefined,
+                  ]}
+                />
+              </HeaderButton>
+            )
+          : undefined,
       headerTitle: () => (
         <Pressable
           onPress={openCapsuleDetail}
@@ -483,10 +586,13 @@ export function ThreadViewScreen() {
     capsuleHeaderMeta.avatarIcon,
     capsuleHeaderMeta.id,
     capsuleHeaderMeta.name,
+    confirmDeleteThread,
+    flowPending,
     threadId,
     headerTitleColor,
     navigation,
     openCapsuleDetail,
+    t,
   ]);
 
   const lastMessage =
@@ -515,7 +621,9 @@ export function ThreadViewScreen() {
     (lastMessage.status === 10 || lastMessage.status === 11);
   const canVisit =
     Boolean(activeAccount?.id) &&
-    (Boolean(threadId) || Boolean(urlParam?.trim()));
+    Boolean(capsuleUrl.trim()) &&
+    (Boolean(threadId) ||
+      (isCapsulesCreateRoute && Boolean(urlParam?.trim())));
   const showStart = !loadingInitial && messages.length === 0 && canVisit;
   const showTextComposer = !!threadId && !loadingInitial && lastExpectsInput;
   /** Capsule root fetch when the server is not waiting for INPUT (10 / SENSITIVE_INPUT 11). */

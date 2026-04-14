@@ -50,17 +50,23 @@
                 "name": "simdjson",
                 "path": "../node_modules/@nozbe/simdjson",
                 "modular_headers": true,
-                "configurations": ["Debug", "Release"]
+                "configurations": [
+                  "Debug",
+                  "Release"
+                ]
               }
             ]
           },
           "android": {
             "packagingOptions": {
-              "pickFirst": ["**/libc++_shared.so"]
+              "pickFirst": [
+                "**/libc++_shared.so"
+              ]
             }
           }
         }
-      ]
+      ],
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true,

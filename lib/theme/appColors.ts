@@ -179,7 +179,8 @@ export function navigationChromeForScheme(
     headerStyle: {
       backgroundColor: rootScreenBackgroundForScheme(scheme),
     },
-    headerTintColor: systemBlueForScheme(scheme),
+    /** Primary label — not accent; matches title and iOS default bar button appearance. */
+    headerTintColor: headerTitleColorForScheme(scheme),
     headerTitleStyle: {
       color: headerTitleColorForScheme(scheme),
     },
@@ -192,7 +193,10 @@ export function tabNavigatorChromeForScheme(
 ): {
   tabBarActiveTintColor: ColorValue;
   tabBarInactiveTintColor: ColorValue;
-  tabBarStyle: { backgroundColor: ColorValue; borderTopColor: ColorValue };
+  tabBarStyle: {
+    backgroundColor: ColorValue;
+    borderTopColor?: ColorValue;
+  };
 } & ReturnType<typeof navigationChromeForScheme> {
   const dark = scheme === "dark";
   const nav = navigationChromeForScheme(scheme);
@@ -208,6 +212,7 @@ export function tabNavigatorChromeForScheme(
       : dark
         ? "rgba(255, 255, 255, 0.08)"
         : "rgba(60, 60, 67, 0.29)";
+
   return {
     ...nav,
     tabBarActiveTintColor: systemBlueForScheme(scheme),

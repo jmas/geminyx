@@ -1,4 +1,9 @@
 import { NativeModules } from "react-native";
+import { base64ToUint8Array } from "lib/db/utils";
+import {
+  parseGeminiResponse as parseGeminiResponseFromWire,
+  type GeminiParsedResponse,
+} from "lib/models/gemini";
 
 /**
  * Native Gemini (TCP/TLS) client. `fetch` resolves with the **full raw response**
@@ -40,11 +45,14 @@ export const GeminiFetcherNative = (
 
 export default GeminiFetcherNative;
 
-export type GeminiParsedResponse = {
+export type { GeminiParsedResponse };
+
+/** Native iOS returns this for `20` + non–`text/gemini` MIME (binary body). */
+export type GeminiWireBinary = {
+  wireFormat: "binary";
   statusCode: number;
   meta: string;
-  body: string;
-  raw: string;
+  bodyBase64: string;
 };
 
 export type GeminiFetchInit = {
@@ -87,34 +95,13 @@ export type GeminiResponse = {
   raw?: string;
 };
 
-function parseGeminiResponse(raw: string): GeminiParsedResponse {
-  const normalized = raw.replace(/^\ufeff/, "");
-  let headerEnd = normalized.indexOf("\r\n");
-  let bodyStart = headerEnd >= 0 ? headerEnd + 2 : -1;
-  if (headerEnd < 0) {
-    const lf = normalized.indexOf("\n");
-    if (lf < 0) {
-      throw new Error("Invalid Gemini response: missing header line");
-    }
-    headerEnd = lf;
-    bodyStart = lf + 1;
-  }
-  const header = normalized.slice(0, headerEnd);
-  const body = normalized.slice(bodyStart);
-  const m = header.match(/^(\d{2}) (.*)$/);
-  if (!m) {
-    throw new Error(`Invalid Gemini response header: ${header.slice(0, 80)}`);
-  }
-  const statusCode = Number.parseInt(m[1], 10);
-  if (Number.isNaN(statusCode)) {
-    throw new Error("Invalid Gemini status code");
-  }
-  return {
-    statusCode,
-    meta: m[2],
-    body,
-    raw: normalized,
-  };
+function isGeminiWireBinary(v: unknown): v is GeminiWireBinary {
+  return (
+    typeof v === "object" &&
+    v !== null &&
+    (v as GeminiWireBinary).wireFormat === "binary" &&
+    typeof (v as GeminiWireBinary).bodyBase64 === "string"
+  );
 }
 
 function isRedirectStatus(statusCode: number): boolean {
@@ -156,7 +143,7 @@ function statusTextForGeminiStatus(status: number): string {
 export async function geminiFetchRaw(
   urlString: string,
   tls?: GeminiFetchTlsIdentity,
-): Promise<string> {
+): Promise<string | GeminiWireBinary> {
   const mod = GeminiFetcherNative;
   if (!mod?.fetch) {
     throw new Error(
@@ -164,23 +151,32 @@ export async function geminiFetchRaw(
     );
   }
   const p12 = tls?.pkcs12Base64?.trim();
+  let res: unknown;
   if (p12) {
     if (!mod.fetchWithOptions) {
       throw new Error(
         "This build does not support Gemini client certificates. Rebuild the iOS app with the latest GeminiFetcher native module.",
       );
     }
-    return await mod.fetchWithOptions(urlString, {
+    res = await mod.fetchWithOptions(urlString, {
       pkcs12Base64: p12,
       passphrase: tls?.passphrase ?? "",
     });
+  } else {
+    const identityLabel = tls?.identityLabel?.trim();
+    if (identityLabel && mod.fetchWithIdentityLabel) {
+      res = await mod.fetchWithIdentityLabel(urlString, { identityLabel });
+    } else {
+      res = await mod.fetch(urlString);
+    }
   }
-
-  const identityLabel = tls?.identityLabel?.trim();
-  if (identityLabel && mod.fetchWithIdentityLabel) {
-    return await mod.fetchWithIdentityLabel(urlString, { identityLabel });
+  if (typeof res === "string") {
+    return res;
   }
-  return await mod.fetch(urlString);
+  if (isGeminiWireBinary(res)) {
+    return res;
+  }
+  throw new Error("Gemini fetch returned an unexpected payload type.");
 }
 
 export async function fetchGeminiParsed(
@@ -188,7 +184,16 @@ export async function fetchGeminiParsed(
   tls?: GeminiFetchTlsIdentity,
 ): Promise<GeminiParsedResponse> {
   const raw = await geminiFetchRaw(urlString, tls);
-  return parseGeminiResponse(raw);
+  if (typeof raw === "string") {
+    return parseGeminiResponseFromWire(raw);
+  }
+  return {
+    statusCode: raw.statusCode,
+    meta: raw.meta,
+    body: "",
+    raw: "",
+    bodyBinaryBase64: raw.bodyBase64,
+  };
 }
 
 export async function geminiFetch(
@@ -310,6 +315,9 @@ function buildGeminiResponse(args: {
       return body;
     },
     async bytes() {
+      if (parsed.bodyBinaryBase64?.length) {
+        return base64ToUint8Array(parsed.bodyBinaryBase64);
+      }
       return new TextEncoder().encode(body);
     },
 

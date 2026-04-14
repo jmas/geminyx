@@ -80,5 +80,51 @@ export const geminyxMigrations = schemaMigrations({
         unsafeExecuteSql("ALTER TABLE capsules DROP COLUMN avatar_url;"),
       ],
     },
+    {
+      toVersion: 8,
+      steps: [
+        addColumns({
+          table: "capsules",
+          columns: [
+            {
+              name: "library_visible",
+              type: "boolean",
+              isOptional: true,
+            },
+          ],
+        }),
+        unsafeExecuteSql(
+          "UPDATE capsules SET library_visible = 1 WHERE library_visible IS NULL;",
+        ),
+      ],
+    },
+    {
+      toVersion: 9,
+      steps: [
+        addColumns({
+          table: "blobs",
+          columns: [
+            { name: "message_id", type: "string", isOptional: true },
+            { name: "mime_type", type: "string", isOptional: true },
+            { name: "content_length", type: "number", isOptional: true },
+          ],
+        }),
+      ],
+    },
+    {
+      toVersion: 10,
+      steps: [
+        addColumns({
+          table: "blobs",
+          columns: [{ name: "file_name", type: "string", isOptional: true }],
+        }),
+      ],
+    },
+    {
+      toVersion: 11,
+      steps: [
+        unsafeExecuteSql("ALTER TABLE accounts DROP COLUMN avatar_url;"),
+      ],
+    },
   ],
 });

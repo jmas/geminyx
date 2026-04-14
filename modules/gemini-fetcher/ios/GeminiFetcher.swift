@@ -281,13 +281,17 @@ class GeminiFetcher: NSObject {
                     urlString: urlString,
                     resolveOnce: resolveOnce,
                     rejectOnce: rejectOnce,
-                    scheduleIdleResolve: { text in
+                    scheduleIdleResolve: { data in
                         clearIdleTimer()
                         let work = DispatchWorkItem {
-                            guard Self.bufferHasHeaderLine(text) else { return }
-                            glog("idle resolve (no TCP EOF) len=\(text.count)")
-                            resolveOnce(text)
-                            connection.cancel()
+                            guard Self.bufferHasHeaderLine(data) else { return }
+                            glog("idle resolve (no TCP EOF) bytes=\(data.count)")
+                            Self.finalizeGeminiWireData(
+                                data,
+                                resolveOnce: resolveOnce,
+                                rejectOnce: rejectOnce,
+                                connection: connection
+                            )
                         }
                         idleAfterDataWork = work
                         DispatchQueue.main.asyncAfter(deadline: .now() + Self.postHeaderIdleSeconds, execute: work)
@@ -307,8 +311,83 @@ class GeminiFetcher: NSObject {
         connection.start(queue: .main)
     }
 
-    private static func bufferHasHeaderLine(_ text: String) -> Bool {
-        text.range(of: "\r\n") != nil || text.firstIndex(of: "\n") != nil
+    private static func bufferHasHeaderLine(_ data: Data) -> Bool {
+        data.range(of: Data([0x0d, 0x0a])) != nil || data.contains(0x0a)
+    }
+
+    /// MIME from `20 <meta>` line (strip parameters), lowercased.
+    private static func successMimeType(_ meta: String) -> String {
+        let m = meta.trimmingCharacters(in: .whitespacesAndNewlines)
+        if m.isEmpty { return "" }
+        if let semi = m.firstIndex(of: ";") {
+            return String(m[..<semi]).trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+        return m.lowercased()
+    }
+
+    private static func splitHeaderAndBody(_ data: Data) -> (headerLine: String, body: Data)? {
+        if let r = data.range(of: Data([0x0d, 0x0a])) {
+            let headerData = data[..<r.lowerBound]
+            let body = data[r.upperBound...]
+            guard let headerLine = String(data: Data(headerData), encoding: .utf8) else { return nil }
+            return (headerLine, Data(body))
+        }
+        if let i = data.firstIndex(of: 0x0a) {
+            let headerData = data[..<i]
+            let body = data[data.index(after: i)...]
+            guard let headerLine = String(data: Data(headerData), encoding: .utf8) else { return nil }
+            return (headerLine, Data(body))
+        }
+        return nil
+    }
+
+    private static func parseGeminiHeaderLine(_ line: String) -> (status: Int, meta: String)? {
+        let parts = line.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: false)
+        guard let first = parts.first, first.count == 2, let status = Int(String(first)) else { return nil }
+        let meta = parts.count > 1 ? String(parts[1]) : ""
+        return (status, meta)
+    }
+
+    /// Returns UTF-8 wire string, or a dictionary `{ wireFormat, statusCode, meta, bodyBase64 }` for non–text/gemini success bodies.
+    private static func finalizeGeminiWireData(
+        _ data: Data,
+        resolveOnce: @escaping (Any?) -> Void,
+        rejectOnce: @escaping (String, String, Error?) -> Void,
+        connection: NWConnection
+    ) {
+        guard let split = splitHeaderAndBody(data) else {
+            rejectOnce("invalid_response", "Missing Gemini header line", nil)
+            connection.cancel()
+            return
+        }
+        guard let parsed = parseGeminiHeaderLine(split.headerLine) else {
+            rejectOnce("invalid_response", "Bad Gemini header line", nil)
+            connection.cancel()
+            return
+        }
+        let status = parsed.status
+        let meta = parsed.meta
+        if status == 20 {
+            let mime = successMimeType(meta)
+            if !mime.isEmpty && mime != "text/gemini" {
+                let result: [String: Any] = [
+                    "wireFormat": "binary",
+                    "statusCode": status,
+                    "meta": meta,
+                    "bodyBase64": split.body.base64EncodedString()
+                ]
+                resolveOnce(result)
+                connection.cancel()
+                return
+            }
+        }
+        guard let text = String(data: data, encoding: .utf8) else {
+            rejectOnce("decode_failed", "Invalid UTF-8 in Gemini response", nil)
+            connection.cancel()
+            return
+        }
+        resolveOnce(text)
+        connection.cancel()
     }
 
     private func sendRequest(
@@ -316,7 +395,7 @@ class GeminiFetcher: NSObject {
         urlString: String,
         resolveOnce: @escaping (Any?) -> Void,
         rejectOnce: @escaping (String, String, Error?) -> Void,
-        scheduleIdleResolve: @escaping (String) -> Void,
+        scheduleIdleResolve: @escaping (Data) -> Void,
         clearIdleTimer: @escaping () -> Void
     ) {
         let requestString = "\(urlString)\r\n"
@@ -332,7 +411,7 @@ class GeminiFetcher: NSObject {
             }
             self.receiveResponse(
                 connection: connection,
-                accumulated: "",
+                accumulated: Data(),
                 resolveOnce: resolveOnce,
                 rejectOnce: rejectOnce,
                 scheduleIdleResolve: scheduleIdleResolve,
@@ -344,10 +423,10 @@ class GeminiFetcher: NSObject {
     /// Accumulates chunks; resolves when TCP EOF (`isComplete`) or after idle once a full header line is present.
     private func receiveResponse(
         connection: NWConnection,
-        accumulated: String,
+        accumulated: Data,
         resolveOnce: @escaping (Any?) -> Void,
         rejectOnce: @escaping (String, String, Error?) -> Void,
-        scheduleIdleResolve: @escaping (String) -> Void,
+        scheduleIdleResolve: @escaping (Data) -> Void,
         clearIdleTimer: @escaping () -> Void
     ) {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, isComplete, error in
@@ -357,31 +436,25 @@ class GeminiFetcher: NSObject {
                 return
             }
 
-            var text = accumulated
+            var buf = accumulated
             if let data = data, !data.isEmpty {
                 clearIdleTimer()
-                guard let chunk = String(data: data, encoding: .utf8) else {
-                    rejectOnce("decode_failed", "Invalid UTF-8 in response", nil)
-                    connection.cancel()
-                    return
-                }
-                text += chunk
+                buf.append(data)
             }
 
             if isComplete {
                 clearIdleTimer()
-                resolveOnce(text)
-                connection.cancel()
+                Self.finalizeGeminiWireData(buf, resolveOnce: resolveOnce, rejectOnce: rejectOnce, connection: connection)
                 return
             }
 
-            if !text.isEmpty && Self.bufferHasHeaderLine(text) {
-                scheduleIdleResolve(text)
+            if !buf.isEmpty && Self.bufferHasHeaderLine(buf) {
+                scheduleIdleResolve(buf)
             }
 
             self.receiveResponse(
                 connection: connection,
-                accumulated: text,
+                accumulated: buf,
                 resolveOnce: resolveOnce,
                 rejectOnce: rejectOnce,
                 scheduleIdleResolve: scheduleIdleResolve,

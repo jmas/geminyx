@@ -9,7 +9,6 @@ export type AccountInsert = {
   id?: string;
   name: string;
   email?: string | null;
-  avatarUrl?: string | null;
   capsuleUrl?: string | null;
   geminiClientP12Base64?: string | null;
   geminiClientP12Passphrase?: string | null;
@@ -19,7 +18,7 @@ export type AccountInsert = {
 export type AccountPatch = Partial<
   Pick<
     Account,
-    "name" | "email" | "avatarUrl" | "capsuleUrl" | "isActive"
+    "name" | "email" | "capsuleUrl" | "isActive"
   >
 > & {
   geminiClientP12Base64?: string | null;
@@ -32,7 +31,6 @@ export class AccountRepository extends BaseRepository {
       id: m.id,
       name: m.name,
       email: m.email?.trim() ? m.email.trim() : undefined,
-      avatarUrl: m.avatarUrl ?? undefined,
       capsuleUrl: m.capsuleUrl ?? undefined,
       geminiClientP12Base64: m.geminiClientP12Base64?.trim()
         ? m.geminiClientP12Base64.trim()
@@ -84,7 +82,6 @@ export class AccountRepository extends BaseRepository {
     const id = input.id ?? newId("acc");
     const name = input.name.trim();
     const email = input.email?.trim() ? input.email.trim() : undefined;
-    const avatarUrl = input.avatarUrl?.trim() ? input.avatarUrl.trim() : undefined;
     const capsuleUrl = input.capsuleUrl?.trim() ? input.capsuleUrl.trim() : undefined;
     const p12 = input.geminiClientP12Base64?.trim()
       ? input.geminiClientP12Base64.trim()
@@ -110,7 +107,6 @@ export class AccountRepository extends BaseRepository {
         rec._raw.id = id;
         rec.name = name;
         rec.email = email;
-        rec.avatarUrl = avatarUrl;
         rec.capsuleUrl = capsuleUrl;
         rec.geminiClientP12Base64 = p12;
         rec.geminiClientP12Passphrase = p12pass;
@@ -129,7 +125,6 @@ export class AccountRepository extends BaseRepository {
   async createFirstFromOnboarding(values: {
     name: string;
     email?: string;
-    avatarUrl?: string;
     capsuleUrl?: string;
     geminiClientP12Base64?: string;
     geminiClientP12Passphrase?: string;
@@ -137,7 +132,6 @@ export class AccountRepository extends BaseRepository {
     return this.insert({
       name: values.name,
       email: values.email,
-      avatarUrl: values.avatarUrl,
       capsuleUrl: values.capsuleUrl,
       geminiClientP12Base64: values.geminiClientP12Base64,
       geminiClientP12Passphrase: values.geminiClientP12Passphrase,
@@ -165,7 +159,6 @@ export class AccountRepository extends BaseRepository {
         if (patch.email !== undefined) {
           rec.email = patch.email?.trim() ? patch.email.trim() : undefined;
         }
-        if (patch.avatarUrl !== undefined) rec.avatarUrl = patch.avatarUrl ?? undefined;
         if (patch.capsuleUrl !== undefined) rec.capsuleUrl = patch.capsuleUrl ?? undefined;
         if (patch.geminiClientP12Base64 !== undefined) {
           rec.geminiClientP12Base64 =

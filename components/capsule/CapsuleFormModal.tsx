@@ -13,6 +13,7 @@ import type { Capsule } from "lib/models/capsule";
 import { queryKeys } from "lib/queryKeys";
 import { categoriesRepo } from "repositories";
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Alert,
   Modal,
@@ -41,8 +42,10 @@ export type CapsuleFormModalProps = {
 export function CapsuleFormModal({
   isOpen,
   onClose,
-  title = "Add Capsule",
+  title,
 }: CapsuleFormModalProps) {
+  const { t } = useTranslation();
+  const resolvedTitle = title ?? t("capsules.modalAddTitle");
   const scheme = useColorScheme();
   const palette: CapsuleFormModalPalette = selectCapsuleUiPalette(scheme);
   const { data: activeAccount } = useAccountActive();
@@ -62,10 +65,10 @@ export function CapsuleFormModal({
 
   const categoryOptions = useMemo(
     () => [
-      { id: "", name: "General" },
       ...categories.map((c) => ({ id: c.id, name: c.name })),
+      { id: "", name: t("capsules.sectionGeneral") },
     ],
-    [categories],
+    [categories, t],
   );
 
   function dismissCancelled() {
@@ -77,7 +80,10 @@ export function CapsuleFormModal({
     { setSubmitting, resetForm }: FormikHelpers<CapsuleFormValues>,
   ) {
     if (!activeAccount?.id) {
-      Alert.alert("No account", "Select an account before adding a capsule.");
+      Alert.alert(
+        t("capsules.noAccountTitle"),
+        t("capsules.addNoAccountBody"),
+      );
       setSubmitting(false);
       return;
     }
@@ -99,7 +105,7 @@ export function CapsuleFormModal({
           },
           onError: (e) => {
             console.error("createCapsule failed", e);
-            alertError(e, "Could not add capsule.", "Adding capsule");
+            alertError(e, t("capsules.addCapsuleError"), t("capsules.addCapsuleErrorTitle"));
             reject(e);
           },
         },
@@ -121,14 +127,13 @@ export function CapsuleFormModal({
           />
         </View>
         <Text style={[styles.title, { color: palette.sheetTitle }]}>
-          {title}
+          {resolvedTitle}
         </Text>
         <CapsuleForm
           palette={palette}
           scheme={scheme}
           isPending={insertMutation.isPending}
           initialValues={capsuleFormEmptyValues}
-          submitLabel="Add"
           categoryOptions={categoryOptions}
           categoryOptionsLoading={categoriesPending}
           onCancel={dismissCancelled}

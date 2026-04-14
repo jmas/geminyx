@@ -69,6 +69,12 @@ export function MessageBodyFullModal({
             style={[styles.grabber, { backgroundColor: sheet.sheetHandle }]}
           />
         </View>
+        <Text
+          style={[styles.title, { color: sheet.sheetTitle }]}
+          accessibilityRole="header"
+        >
+          Message
+        </Text>
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={styles.scrollContent}
@@ -128,12 +134,19 @@ const styles = StyleSheet.create({
     height: 5,
     borderRadius: 3,
   },
+  title: {
+    fontSize: 20,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 8,
+    paddingHorizontal: 20,
+  },
   scroll: {
     flex: 1,
   },
   scrollContent: {
     paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingTop: 4,
     paddingBottom: 16,
   },
   footer: {

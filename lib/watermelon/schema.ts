@@ -1,14 +1,13 @@
 import { appSchema, tableSchema } from "@nozbe/watermelondb";
 
 export const geminyxSchema = appSchema({
-  version: 7,
+  version: 11,
   tables: [
     tableSchema({
       name: "accounts",
       columns: [
         { name: "name", type: "string" },
         { name: "email", type: "string", isOptional: true },
-        { name: "avatar_url", type: "string", isOptional: true },
         { name: "capsule_url", type: "string", isOptional: true },
         { name: "gemini_client_p12_base64", type: "string", isOptional: true },
         {
@@ -28,6 +27,11 @@ export const geminyxSchema = appSchema({
         { name: "description", type: "string", isOptional: true },
         { name: "account_id", type: "string" },
         { name: "capsule_category_id", type: "string", isOptional: true },
+        {
+          name: "library_visible",
+          type: "boolean",
+          isOptional: true,
+        },
       ],
     }),
     tableSchema({
@@ -63,7 +67,13 @@ export const geminyxSchema = appSchema({
     }),
     tableSchema({
       name: "blobs",
-      columns: [{ name: "body_base64", type: "string" }],
+      columns: [
+        { name: "body_base64", type: "string" },
+        { name: "message_id", type: "string", isOptional: true },
+        { name: "mime_type", type: "string", isOptional: true },
+        { name: "content_length", type: "number", isOptional: true },
+        { name: "file_name", type: "string", isOptional: true },
+      ],
     }),
     tableSchema({
       name: "settings",

@@ -4,10 +4,11 @@ import GeminiFetcher, {
   type GeminiFetchTlsIdentity,
 } from "gemini-fetcher";
 import { generateLocalClientPkcs12OffThread } from "lib/account/generateLocalClientPkcs12OffThread";
-import type { Capsule } from "lib/models/capsule";
+import { i18n } from "lib/i18n";
 import type { ThreadMessage } from "lib/models/threadMessage";
 import {
   geminiRequestPathForMessage,
+  geminiSuccessMimeType,
   isCrossOriginGeminiUrl,
   isGeminiInputStatus,
   isGeminiRedirectStatus,
@@ -20,8 +21,7 @@ import {
   suggestedCapsuleNameFromGeminiUrl,
   uint8ArrayToBase64,
 } from "lib/models/gemini";
-import type { CapsuleCreateVariables } from "lib/resources/capsules";
-import type { MessageCreateVariables } from "lib/resources/messages";
+import { base64ToUint8Array } from "lib/db/utils";
 import {
   useCallback,
   useRef,
@@ -35,9 +35,11 @@ import { alertError, formatError } from "utils/error";
 import {
   accountsRepo,
   capsulesRepo,
-  threadsRepo,
   messagesRepo,
+  threadsRepo,
+  type MessageCreateVariables,
 } from "repositories";
+import { fileNameFromUriOrPath } from "utils/fileNameFromPath";
 import { logThreadMessage, summarizeRequestUrl } from "utils/threadMessageLog";
 
 const CLIENT_CERT_GENERATE_TIMEOUT_MS = 150_000; // 2.5 minutes
@@ -175,23 +177,6 @@ export function useMessageCreate({
 }: UseMessageCreateParams) {
   const router = useRouter();
 
-  const createCapsuleFromVariables = useCallback(
-    async (values: CapsuleCreateVariables): Promise<Capsule> => {
-      const active = await accountsRepo.getActive();
-      if (!active?.id) {
-        throw new Error("No active account");
-      }
-      return capsulesRepo.insertCapsuleOnly({
-        accountId: active.id,
-        name: values.name,
-        avatarIcon: values.avatarIcon,
-        url: values.url,
-        description: values.description,
-      });
-    },
-    [],
-  );
-
   const flowBusyRef = useRef(false);
   const [flowPending, setFlowPending] = useState(false);
 
@@ -227,6 +212,7 @@ export function useMessageCreate({
               accountId: active.id,
               name: suggestedCapsuleNameFromGeminiUrl(bootUrl),
               url: normalizeGeminiCapsuleRootUrl(bootUrl) || bootUrl,
+              libraryVisible: false,
             }));
           await threadsRepo.ensureThreadForCapsule(cap.id);
           threadId = cap.id;
@@ -373,11 +359,10 @@ export function useMessageCreate({
           // If we have no PKCS#12 in-hand for this flow, treat it as missing.
           if (!p12.trim()) {
             const ok = await confirmAsync({
-              title: "Client certificate required",
-              message:
-                "This capsule requires a client certificate. Generate one for this account now?",
-              confirmText: "Generate",
-              cancelText: "Not now",
+              title: i18n.t("cert.clientRequiredTitle"),
+              message: i18n.t("cert.clientRequiredMsg"),
+              confirmText: i18n.t("common.generate"),
+              cancelText: i18n.t("common.notNow"),
             });
             if (ok) {
               onClientCertGenerateStart?.();
@@ -422,10 +407,10 @@ export function useMessageCreate({
                       : String(certErr),
                 });
                 Alert.alert(
-                  "Client certificate",
+                  i18n.t("cert.clientCertTitle"),
                   certErr instanceof Error
                     ? certErr.message
-                    : "Could not generate a client certificate.",
+                    : i18n.t("cert.clientCertGenerateFail"),
                 );
                 onClientCertGenerateEnd?.({ ok: false });
               }
@@ -436,11 +421,10 @@ export function useMessageCreate({
           let shareAllowed = threadClientCertShareAllowed === true;
           if (nowHasCert && !shareAllowed) {
             const okToShare = await confirmAsync({
-              title: "Share certificate with server?",
-              message:
-                "To access this capsule, Geminyx must present your account’s client certificate during the TLS handshake. Allow this for this thread?",
-              confirmText: "Allow",
-              cancelText: "Cancel",
+              title: i18n.t("cert.shareTitle"),
+              message: i18n.t("cert.shareMsg"),
+              confirmText: i18n.t("common.allow"),
+              cancelText: i18n.t("common.cancel"),
             });
             if (okToShare) {
               await threadsRepo.setClientCertShareAllowed(threadId, true);
@@ -549,8 +533,6 @@ export function useMessageCreate({
                   active.id,
                   target,
                 );
-              const normalizedTarget =
-                normalizeGeminiCapsuleRootUrl(target) || target;
               const capName = suggestedCapsuleNameFromGeminiUrl(target);
               logThreadMessage("gemini.redirect.new_capsule.begin", {
                 threadId,
@@ -580,45 +562,23 @@ export function useMessageCreate({
                 });
                 return;
               }
-              const newCap = await createCapsuleFromVariables({
-                name: capName,
-                url: normalizedTarget,
-              });
-              const noticeId = newLocalMessageId("in");
-              const noticeSentAt = new Date().toISOString();
-              const noticeBody = `Redirected to another Gemini host (${capName}). A new capsule was created — opening it now.`;
-              const noticeLen = new TextEncoder().encode(noticeBody).length;
-              const savedNotice = await messagesRepo.createFromVariables({
-                thread_id: threadId,
-                id: noticeId,
-                sentAt: noticeSentAt,
-                isOutgoing: false,
-                requestPath: geminiRequestPathForMessage(
-                  capsuleUrl,
-                  fetchedUrl,
-                ),
-                body: noticeBody,
-                contentLength: noticeLen,
-              });
-              setMessages((prev) => [...prev, savedNotice]);
-              await onLocalDataChanged?.();
-              logThreadMessage("gemini.redirect.new_capsule.done", {
+              logThreadMessage("gemini.redirect.new_capsule.navigate", {
                 threadId,
-                newCapsuleId: newCap.id,
                 flowKind,
+                targetSummary: summarizeRequestUrl(target),
+                capName,
               });
               router.replace({
-                pathname: "/threads/view",
+                pathname: "/capsules/create",
                 params: {
-                  url: normalizedTarget,
-                  name: newCap.name,
+                  url: target,
+                  name: capName,
                 },
               } as unknown as Href);
               logThreadMessage("flow.success", {
                 threadId,
                 flowKind,
                 outgoingId,
-                replyId: noticeId,
                 redirect: true,
               });
               return;
@@ -718,8 +678,14 @@ export function useMessageCreate({
         let incomingCreateValues: MessageCreateVariables;
 
         if (asBlob) {
-          const bytes = new TextEncoder().encode(parsed.body);
+          const bytes =
+            parsed.bodyBinaryBase64 != null &&
+            parsed.bodyBinaryBase64.length > 0
+              ? base64ToUint8Array(parsed.bodyBinaryBase64)
+              : new TextEncoder().encode(parsed.body);
           const b64 = uint8ArrayToBase64(bytes);
+          const blobMime = geminiSuccessMimeType(metaTrim);
+          const blobFileName = fileNameFromUriOrPath(fetchedUrl);
           optimisticIn = {
             id: replyId,
             contentLength: bytes.byteLength,
@@ -729,6 +695,8 @@ export function useMessageCreate({
             body: "Loading attachment\u2026",
             status: parsed.statusCode,
             ...(metaTrim.length > 0 ? { meta: metaTrim } : {}),
+            ...(blobMime.length > 0 ? { blobMimeType: blobMime } : {}),
+            ...(blobFileName ? { blobFileName } : {}),
           };
           incomingCreateValues = {
             thread_id: threadId,
@@ -736,8 +704,10 @@ export function useMessageCreate({
             sentAt: replySentAt,
             isOutgoing: false,
             requestPath,
-            contentLength: 0,
+            contentLength: bytes.byteLength,
             blobBodyBase64: b64,
+            blobMimeType: blobMime.length > 0 ? blobMime : undefined,
+            ...(blobFileName ? { blobFileName } : {}),
             status: parsed.statusCode,
             meta: metaTrim.length > 0 ? metaTrim : undefined,
           };
@@ -882,7 +852,6 @@ export function useMessageCreate({
       activeAccountName,
       bootstrapGeminiUrl,
       capsuleUrl,
-      createCapsuleFromVariables,
       onBootstrapThreadId,
       threadIdProp,
       threadClientCertShareAllowed,

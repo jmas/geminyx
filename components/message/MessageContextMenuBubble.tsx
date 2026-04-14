@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import { Alert, Pressable } from "react-native";
+import { Alert, Pressable, StyleSheet } from "react-native";
 
 export type MessageContextMenuBubbleProps = {
   children: ReactNode;
@@ -20,6 +20,7 @@ export function MessageContextMenuBubble({
 }: MessageContextMenuBubbleProps) {
   return (
     <Pressable
+      style={styles.wrap}
       disabled={disabled}
       onLongPress={() => {
         if (disabled) return;
@@ -34,3 +35,11 @@ export function MessageContextMenuBubble({
     </Pressable>
   );
 }
+
+const styles = StyleSheet.create({
+  /** Lets attachment / wide bubbles use full width allowed by the row (max 80%). */
+  wrap: {
+    alignSelf: "stretch",
+    maxWidth: "100%",
+  },
+});

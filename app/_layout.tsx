@@ -1,3 +1,5 @@
+import "lib/i18n";
+
 import { DatabaseProvider } from "@nozbe/watermelondb/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { NativeStackNavigationOptions } from "@react-navigation/native-stack";
@@ -7,11 +9,12 @@ import { StatusBar } from "expo-status-bar";
 import { JetBrainsMono_400Regular, useFonts } from "@expo-google-fonts/jetbrains-mono";
 import { isAppDatabaseReady } from "lib/appDatabaseReady";
 import { initializeDatabase } from "lib/databaseSetup";
-import { navigationChromeForScheme } from "lib/theme/appColors";
 import { registerLocalDatabaseEraseHandler } from "lib/localDatabaseErase";
 import { queryClient } from "lib/queryClient";
+import { navigationChromeForScheme } from "lib/theme/appColors";
 import { getWatermelonDatabase } from "lib/watermelon/database";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useColorScheme } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
@@ -27,16 +30,75 @@ export const unstable_settings = {
 
 type AppGate = "boot" | "onboarding" | "app";
 
-export default function RootLayout() {
+function AppStack() {
   const scheme = useColorScheme();
+  const { t } = useTranslation();
   const stackScreenOptions = useMemo(
     () =>
       ({
         ...navigationChromeForScheme(scheme),
-        headerBackTitle: "Back",
+        headerBackTitle: t("common.back"),
       }) as NativeStackNavigationOptions,
-    [scheme],
+    [scheme, t],
   );
+  return (
+    <Stack screenOptions={stackScreenOptions}>
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="thread/[id]" />
+      <Stack.Screen
+        name="threads/view"
+        options={{
+          title: t("stack.thread"),
+        }}
+      />
+      <Stack.Screen
+        name="capsules/create"
+        options={{
+          title: t("stack.thread"),
+        }}
+      />
+      <Stack.Screen
+        name="capsule/create"
+        options={{
+          title: t("stack.addCapsule"),
+        }}
+      />
+      <Stack.Screen name="capsule/[id]" />
+      <Stack.Screen
+        name="capsule/edit/[id]"
+        options={{
+          title: t("stack.editCapsule"),
+        }}
+      />
+      <Stack.Screen
+        name="account/edit"
+        options={{
+          title: t("stack.editAccount"),
+        }}
+      />
+      <Stack.Screen
+        name="account/create"
+        options={{
+          title: t("stack.newAccount"),
+        }}
+      />
+      <Stack.Screen
+        name="account/certificate"
+        options={{
+          title: t("stack.certificate"),
+        }}
+      />
+      <Stack.Screen
+        name="account/developer"
+        options={{
+          title: t("stack.developer"),
+        }}
+      />
+    </Stack>
+  );
+}
+
+export default function RootLayout() {
   const [gate, setGate] = useState<AppGate>("boot");
   const [bootDone, setBootDone] = useState(false);
   const [onboardingStep, setOnboardingStep] = useState<"slides" | "create">(
@@ -117,47 +179,7 @@ export default function RootLayout() {
       <QueryClientProvider client={queryClient}>
         <DatabaseProvider database={getWatermelonDatabase()}>
           <PopupProvider>
-            <Stack screenOptions={stackScreenOptions}>
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="thread/[id]" />
-              <Stack.Screen
-                name="threads/view"
-                options={{
-                  title: "Thread",
-                }}
-              />
-              <Stack.Screen name="capsule/[id]" />
-              <Stack.Screen
-                name="capsule/edit/[id]"
-                options={{
-                  title: "Edit Capsule",
-                }}
-              />
-              <Stack.Screen
-                name="account/edit"
-                options={{
-                  title: "Edit profile",
-                }}
-              />
-              <Stack.Screen
-                name="account/create"
-                options={{
-                  title: "New account",
-                }}
-              />
-              <Stack.Screen
-                name="account/certificate"
-                options={{
-                  title: "Certificate",
-                }}
-              />
-              <Stack.Screen
-                name="account/developer"
-                options={{
-                  title: "Developer",
-                }}
-              />
-            </Stack>
+            <AppStack />
             <StatusBar style="auto" />
           </PopupProvider>
         </DatabaseProvider>

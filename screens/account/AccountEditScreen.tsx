@@ -57,7 +57,6 @@ export function AccountEditScreen() {
     return {
       name: activeAccount.name ?? "",
       email: activeAccount.email ?? "",
-      avatarUrl: activeAccount.avatarUrl ?? "",
       capsuleUrl: activeAccount.capsuleUrl ?? "",
     };
   }, [activeAccount]);
@@ -121,7 +120,6 @@ export function AccountEditScreen() {
         await accountsRepo.patch(activeAccount.id, {
           name: values.name.trim(),
           email: values.email.trim() || undefined,
-          avatarUrl: values.avatarUrl.trim() || undefined,
           capsuleUrl: values.capsuleUrl.trim() || undefined,
         });
         router.back();

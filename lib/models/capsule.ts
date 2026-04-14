@@ -9,4 +9,9 @@ export type Capsule = {
   description?: string;
   /** When unset, the capsule appears under the default “General” group */
   categoryId?: string;
+  /**
+   * When false, the capsule is only used for browsing this thread (not listed in
+   * the library or thread list) until the user adds it to the library.
+   */
+  libraryVisible?: boolean;
 };

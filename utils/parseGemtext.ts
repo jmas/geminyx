@@ -1,6 +1,9 @@
 /**
  * Minimal Gemtext (text/gemini) parsing for message bodies.
  * @see https://gemini.circumlunar.space/docs/specification.gmi
+ *
+ * Headings also accept common “broken” lines without a space after `#` / `##` / `###`
+ * (e.g. `##Title`), as long as the next character is not `#` (so `####` stays plain).
  */
 
 export type GemtextSegment =
@@ -54,7 +57,9 @@ export function parseGemtext(input: string): GemtextSegment[] {
     }
 
     if (line.startsWith("###")) {
-      const m = line.match(/^###\s+(.*)$/);
+      const strict = line.match(/^###\s+(.*)$/);
+      const relaxed = line.match(/^###([^#\s].*)$/);
+      const m = strict ?? relaxed;
       if (m) {
         flushPlain();
         segments.push({ type: "heading", level: 3, text: m[1] });
@@ -62,7 +67,9 @@ export function parseGemtext(input: string): GemtextSegment[] {
       }
     }
     if (line.startsWith("##")) {
-      const m = line.match(/^##\s+(.*)$/);
+      const strict = line.match(/^##\s+(.*)$/);
+      const relaxed = line.match(/^##([^#\s].*)$/);
+      const m = strict ?? relaxed;
       if (m) {
         flushPlain();
         segments.push({ type: "heading", level: 2, text: m[1] });
@@ -70,7 +77,9 @@ export function parseGemtext(input: string): GemtextSegment[] {
       }
     }
     if (line.startsWith("#")) {
-      const m = line.match(/^#\s+(.*)$/);
+      const strict = line.match(/^#\s+(.*)$/);
+      const relaxed = line.match(/^#([^#\s].*)$/);
+      const m = strict ?? relaxed;
       if (m) {
         flushPlain();
         segments.push({ type: "heading", level: 1, text: m[1] });

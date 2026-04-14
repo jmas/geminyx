@@ -5,12 +5,14 @@ import {
 } from "lib/watermelon";
 import { accountsRepo } from "repositories/accountRepository";
 import { capsulesRepo } from "repositories/capsuleRepository";
+import { syncLanguageFromSettings } from "lib/i18n/syncLanguageFromSettings";
 import { clearSettingsUiCache, preloadSettingsFromDatabase } from "repositories";
 
 /** Opens WatermelonDB and seeds default capsules when the active account has none. */
 export async function initializeDatabase(): Promise<void> {
   getWatermelonDatabase();
   await preloadSettingsFromDatabase();
+  await syncLanguageFromSettings();
   const active = await accountsRepo.getActive();
   if (active?.id) {
     await capsulesRepo.seedDefaultCapsulesIfEmpty(active.id);

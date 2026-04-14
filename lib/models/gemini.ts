@@ -6,6 +6,11 @@ export type GeminiParsedResponse = {
   body: string;
   /** Full wire string from the server (for debugging). */
   raw: string;
+  /**
+   * Non–text/gemini success body from native (binary wire). When set, decode with
+   * `base64ToUint8Array` instead of treating `body` as UTF-8 text.
+   */
+  bodyBinaryBase64?: string;
 };
 
 /**

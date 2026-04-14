@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import type { Account } from "lib/models/account";
+import { syncLanguageFromSettings } from "lib/i18n";
 import { queryKeys } from "lib/queryKeys";
 import { iosAccountSwitchPalette, systemBlueForScheme } from "lib/theme/appColors";
 import { semanticUiPaletteForScheme } from "lib/theme/semanticUi";
@@ -68,7 +69,11 @@ export function AccountSwitchModal({ visible, onClose }: AccountSwitchModalProps
       setSwitchingId(account.id);
       try {
         await accountsRepo.patch(account.id, { isActive: true });
+        await syncLanguageFromSettings();
         await queryClient.invalidateQueries({ queryKey: queryKeys.accounts.all });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.settings.uiLanguage(),
+        });
         await queryClient.invalidateQueries({ queryKey: queryKeys.capsules.all });
         await queryClient.invalidateQueries({ queryKey: queryKeys.threads.all });
         onClose();

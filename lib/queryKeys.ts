@@ -1,5 +1,9 @@
 /** Centralized TanStack Query keys — import these instead of string literals. */
 export const queryKeys = {
+  settings: {
+    all: ["settings"] as const,
+    uiLanguage: () => [...queryKeys.settings.all, "ui-language"] as const,
+  },
   accounts: {
     all: ["accounts"] as const,
     active: () => [...queryKeys.accounts.all, "active"] as const,

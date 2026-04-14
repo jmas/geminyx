@@ -1,3 +1,4 @@
+import { HeaderButton } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,7 +12,9 @@ import {
 } from "react";
 import {
   Alert,
+  Platform,
   Pressable,
+  RefreshControl,
   SectionList,
   StyleSheet,
   Text,
@@ -19,6 +22,7 @@ import {
   View,
   type ColorValue,
 } from "react-native";
+import { useTranslation } from "react-i18next";
 import { usePopupManager } from "react-popup-manager";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
@@ -32,12 +36,18 @@ import { SwipeToDeleteRow } from "components/ui/SwipeToDeleteRow";
 import { useAccountActive } from "hooks/account/useAccountActive";
 import type { Capsule } from "lib/models/capsule";
 import { queryKeys } from "lib/queryKeys";
-import { destructiveTintColor, systemBlueForScheme } from "lib/theme/appColors";
+import {
+  destructiveTintColor,
+  headerTitleColorForScheme,
+  systemBlueForScheme,
+} from "lib/theme/appColors";
+import type { TFunction } from "i18next";
 import { capsulesRepo, type CapsuleListSection } from "repositories";
 
 const LONG_PRESS_MS = 450;
 
 export function CapsuleListScreen() {
+  const { t } = useTranslation();
   const navigation = useNavigation();
   const scheme = useColorScheme();
   const palette = selectCapsuleUiPalette(scheme);
@@ -49,6 +59,7 @@ export function CapsuleListScreen() {
 
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [listRefreshing, setListRefreshing] = useState(false);
 
   const queryClient = useQueryClient();
   const {
@@ -83,7 +94,20 @@ export function CapsuleListScreen() {
     await queryClient.invalidateQueries({
       queryKey: queryKeys.capsules.listForActive(),
     });
+    await queryClient.invalidateQueries({
+      queryKey: queryKeys.threads.listForActive(),
+    });
   }, [queryClient]);
+
+  const onPullToRefresh = useCallback(async () => {
+    setListRefreshing(true);
+    try {
+      await refreshLists();
+      await refetchCapsules();
+    } finally {
+      setListRefreshing(false);
+    }
+  }, [refreshLists, refetchCapsules]);
 
   const exitSelectMode = useCallback(() => {
     setSelecting(false);
@@ -108,18 +132,21 @@ export function CapsuleListScreen() {
   const confirmDeleteIds = useCallback(
     (ids: string[], firstName?: string) => {
       const count = ids.length;
-      const title = count === 1 ? "Delete chat?" : `Delete ${count} chats?`;
+      const title =
+        count === 1
+          ? t("capsules.deleteTitleOne")
+          : t("capsules.deleteTitleMany", { count });
       const message =
         count === 1
           ? firstName
-            ? `Delete “${firstName}” and all messages? This cannot be undone.`
-            : "This will remove the capsule, thread, and all messages. This cannot be undone."
-          : "This will remove the selected capsules, threads, and all messages. This cannot be undone.";
+            ? t("capsules.deleteMsgSingleNamed", { name: firstName })
+            : t("capsules.deleteMsgSingleGeneric")
+          : t("capsules.deleteMsgMany");
 
       Alert.alert(title, message, [
-        { text: "Cancel", style: "cancel" },
+        { text: t("common.cancel"), style: "cancel" },
         {
-          text: "Delete",
+          text: t("common.delete"),
           style: "destructive",
           onPress: () => {
             void (async () => {
@@ -131,26 +158,32 @@ export function CapsuleListScreen() {
                 exitSelectMode();
               } catch (e) {
                 console.error(e);
-                Alert.alert("Could not delete", "Please try again.");
+                Alert.alert(
+                  t("capsules.deleteErrorTitle"),
+                  t("capsules.deleteErrorBody"),
+                );
               }
             })();
           },
         },
       ]);
     },
-    [exitSelectMode, refreshLists],
+    [exitSelectMode, refreshLists, t],
   );
 
   const openCategoryManageModal = useCallback(async () => {
     if (!activeAccount?.id) {
-      Alert.alert("No account", "Select an account before managing categories.");
+      Alert.alert(
+        t("capsules.noAccountTitle"),
+        t("capsules.noAccountBody"),
+      );
       return;
     }
     const { response } = popupManager.open(CategoryManageModal, {
       accountId: activeAccount.id,
     });
     await response;
-  }, [popupManager, activeAccount?.id]);
+  }, [popupManager, activeAccount?.id, t]);
 
   const openAddCapsuleSheet = useCallback(async () => {
     const { response } = popupManager.open(CapsuleFormModal);
@@ -163,48 +196,59 @@ export function CapsuleListScreen() {
     ) {
       const c = closeResult.created;
       router.push({
-        pathname: "/thread/[id]",
-        params: { id: c.id, name: c.name },
+        pathname: "/capsule/edit/[id]",
+        params: { id: c.id },
       } as unknown as Href);
     }
   }, [popupManager]);
 
   const tint = systemBlueForScheme(scheme);
+  const headerTint = headerTitleColorForScheme(scheme);
 
   useLayoutEffect(() => {
+    const folderIconSize = 28;
+    const addIconSize = 28;
+    const deleteIconSize = 24;
+
     navigation.setOptions({
       title: selecting
         ? selectedIds.length > 0
           ? String(selectedIds.length)
-          : "Select"
-        : "Capsules",
-      headerLeftContainerStyle: { paddingLeft: 16 },
-      headerRightContainerStyle: {
-        paddingRight: 16,
-      },
+          : t("common.select")
+        : t("capsules.headerTitle"),
+      headerLeftContainerStyle: { paddingLeft: 8 },
+      headerRightContainerStyle: { paddingRight: 8 },
       headerLeft: selecting
         ? () => (
-            <Pressable
+            <HeaderButton
               onPress={exitSelectMode}
-              hitSlop={12}
-              style={({ pressed }) => [pressed && { opacity: 0.55 }]}
+              accessibilityLabel={t("common.cancel")}
             >
-              <Text style={[styles.headerAction, { color: tint }]}>Cancel</Text>
-            </Pressable>
+              <Text style={[styles.headerAction, { color: headerTint }]}>
+                {t("common.cancel")}
+              </Text>
+            </HeaderButton>
           )
         : () => (
-            <Pressable
+            <HeaderButton
               onPress={() => void openCategoryManageModal()}
-              hitSlop={12}
-              style={({ pressed }) => [pressed && { opacity: 0.55 }]}
-              accessibilityLabel="Manage categories"
+              accessibilityLabel={t("capsules.a11yManageCategories")}
             >
-              <Ionicons name="folder-outline" size={28} color={tint} />
-            </Pressable>
+              <Ionicons
+                name="folder-outline"
+                size={folderIconSize}
+                color={headerTint}
+                style={
+                  Platform.OS === "ios"
+                    ? { lineHeight: folderIconSize }
+                    : undefined
+                }
+              />
+            </HeaderButton>
           ),
       headerRight: () =>
         selecting ? (
-          <Pressable
+          <HeaderButton
             onPress={() => {
               if (selectedIds.length === 0) return;
               const first = capsules.find((c) => c.id === selectedIds[0]);
@@ -213,37 +257,50 @@ export function CapsuleListScreen() {
                 selectedIds.length === 1 ? first?.name : undefined,
               );
             }}
-            hitSlop={12}
             disabled={selectedIds.length === 0}
-            style={({ pressed }) => [
-              pressed && selectedIds.length > 0 && { opacity: 0.55 },
-              selectedIds.length === 0 && { opacity: 0.35 },
-            ]}
-            accessibilityLabel="Delete selected"
+            accessibilityLabel={t("capsules.a11yDeleteSelected")}
           >
-            <Ionicons name="trash-outline" size={24} color={destructiveTintColor()} />
-          </Pressable>
+            <Ionicons
+              name="trash-outline"
+              size={deleteIconSize}
+              color={destructiveTintColor()}
+              style={
+                Platform.OS === "ios"
+                  ? { lineHeight: deleteIconSize }
+                  : undefined
+              }
+            />
+          </HeaderButton>
         ) : (
-          <Pressable
+          <HeaderButton
             onPress={() => void openAddCapsuleSheet()}
-            hitSlop={12}
-            style={({ pressed }) => [pressed && { opacity: 0.55 }]}
-            accessibilityLabel="Add capsule"
+            accessibilityLabel={t("capsules.a11yAddCapsule")}
           >
-            <Ionicons name="add" size={28} color={tint} />
-          </Pressable>
+            <Ionicons
+              name="add"
+              size={addIconSize}
+              color={headerTint}
+              style={
+                Platform.OS === "ios"
+                  ? { lineHeight: addIconSize }
+                  : undefined
+              }
+            />
+          </HeaderButton>
         ),
     });
   }, [
     capsules,
     confirmDeleteIds,
     exitSelectMode,
+    headerTint,
     navigation,
     openAddCapsuleSheet,
     openCategoryManageModal,
     selecting,
     selectedIds,
     tint,
+    t,
   ]);
 
   const showEmptyState =
@@ -255,24 +312,32 @@ export function CapsuleListScreen() {
         sections={sections}
         keyExtractor={(item) => item.id}
         stickySectionHeadersEnabled
+        refreshControl={
+          <RefreshControl
+            refreshing={listRefreshing}
+            onRefresh={() => void onPullToRefresh()}
+            tintColor={tint as string}
+            colors={[tint as string]}
+          />
+        }
         contentContainerStyle={[
           styles.listContent,
           showEmptyState && styles.listContentEmpty,
         ]}
         ListEmptyComponent={
           showEmptyState ? (
-            <CapsulesEmptyState palette={palette} tint={tint} />
+            <CapsulesEmptyState palette={palette} tint={tint} t={t} />
           ) : null
         }
         extraData={{ selecting, selectedIds }}
-        renderSectionHeader={({ section: { title } }) => (
+        renderSectionHeader={({ section: { title, categoryId } }) => (
           <View
             style={[styles.sectionHeader, { backgroundColor: palette.background }]}
           >
             <Text
               style={[styles.sectionHeaderText, { color: palette.textSecondary }]}
             >
-              {title}
+              {categoryId === null ? t("capsules.sectionGeneral") : title}
             </Text>
           </View>
         )}
@@ -353,26 +418,33 @@ export function CapsuleListScreen() {
 function CapsulesEmptyState({
   palette,
   tint,
+  t,
 }: {
   palette: CapsuleListRowPalette;
   tint: ColorValue;
+  t: TFunction;
 }) {
   return (
     <View
       style={styles.emptyWrap}
-      accessibilityLabel="No capsules yet. Capsules are named spaces for your chats. Tap add in the header to create one."
+      accessibilityLabel={t("capsules.emptyA11y")}
     >
       <View
-        style={[styles.emptyIconCircle, { borderColor: palette.separator }]}
+        style={[
+          styles.emptyIconCircle,
+          {
+            borderColor: palette.separator,
+            backgroundColor: palette.listRowSurface,
+          },
+        ]}
       >
         <Ionicons name="cube-outline" size={36} color={tint} />
       </View>
       <Text style={[styles.emptyTitle, { color: palette.textPrimary }]}>
-        No capsules yet
+        {t("capsules.emptyTitle")}
       </Text>
       <Text style={[styles.emptyBody, { color: palette.textSecondary }]}>
-        Capsules are named spaces for your chats—each keeps its own thread and
-        history. Tap + above to create one and start a conversation.
+        {t("capsules.emptyBody")}
       </Text>
     </View>
   );

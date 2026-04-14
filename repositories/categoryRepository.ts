@@ -1,9 +1,9 @@
-import type { Category } from "lib/models/category";
-import { SEED_CAPSULE_CATEGORIES } from "lib/resources/seedCapsules";
+import { Q } from "@nozbe/watermelondb";
+import { SEED_CAPSULE_CATEGORIES } from "data/seeds/capsules";
 import { newId } from "lib/db/utils";
+import type { Category } from "lib/models/category";
 import { Capsule as CapsuleModel } from "lib/watermelon/models/Capsule";
 import { Category as CategoryRecord } from "lib/watermelon/models/Category";
-import { Q } from "@nozbe/watermelondb";
 import { BaseRepository } from "repositories/baseRepository";
 
 function modelToCategory(m: CategoryRecord): Category {
@@ -73,7 +73,9 @@ export class CategoryRepository extends BaseRepository {
     await db.write(async () => {
       const m = await this.categories().find(categoryId);
       if (m.accountId !== aid) {
-        throw new Error("categories.updateName: category does not belong to account");
+        throw new Error(
+          "categories.updateName: category does not belong to account",
+        );
       }
       await m.update((rec) => {
         rec.name = trimmed;
@@ -87,7 +89,9 @@ export class CategoryRepository extends BaseRepository {
   ): Promise<void> {
     const aid = accountId.trim();
     if (!aid.length) {
-      throw new Error("categories.deleteAndClearCapsules: accountId is required");
+      throw new Error(
+        "categories.deleteAndClearCapsules: accountId is required",
+      );
     }
     const db = this.db();
     await db.write(async () => {

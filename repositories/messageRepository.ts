@@ -1,5 +1,4 @@
 import type { ThreadMessage } from "lib/models/threadMessage";
-import type { MessageCreateVariables } from "lib/resources/messages";
 import {
   SQLITE_META_MAX_BYTES,
   base64ToUint8Array,
@@ -16,6 +15,31 @@ import { accountsRepo } from "repositories/accountRepository";
 import { threadsRepo } from "repositories/threadRepository";
 import { logThreadMessage } from "utils/threadMessageLog";
 
+/** Page size for thread message lists (recent tail + older pages). */
+export const MESSAGES_PAGE_SIZE = 10;
+
+export type MessageCreateVariables = {
+  thread_id: string;
+  id: string;
+  sentAt: string;
+  isOutgoing: boolean;
+  contentLength: number;
+  /** Outgoing payload (UTF-8). Response `body` is set when syncing server replies. */
+  body?: string;
+  /** Existing row in `blobs` (no new insert). Do not use with `blobBodyBase64`. */
+  blobId?: string;
+  /** New binary payload; stored in `blobs`, message gets a new `blobId`. */
+  blobBodyBase64?: string;
+  /** Stored on the `blobs` row with the payload (Gemini success MIME). */
+  blobMimeType?: string;
+  /** Last path segment of the resource URL (e.g. Gemini fetch URL). */
+  blobFileName?: string;
+  status?: number;
+  meta?: string;
+  /** Path (+ query) for this Gemini request; see `ThreadMessage.requestPath`. */
+  requestPath: string;
+};
+
 export class MessageRepository extends BaseRepository {
   private messages() {
     return this.db().get<MessageModel>("messages");
@@ -29,7 +53,10 @@ export class MessageRepository extends BaseRepository {
     return this.db().get<AppBlob>("blobs");
   }
 
-  private modelToMessage(m: MessageModel): ThreadMessage {
+  private modelToMessage(
+    m: MessageModel,
+    blobMap?: Map<string, AppBlob>,
+  ): ThreadMessage {
     const msg: ThreadMessage = {
       id: m.id,
       contentLength: m.contentLength,
@@ -39,11 +66,39 @@ export class MessageRepository extends BaseRepository {
     };
     const bodyText = m.body?.trim();
     if (bodyText) msg.body = bodyText;
-    if (m.blobId) msg.blobId = m.blobId;
+    if (m.blobId) {
+      msg.blobId = m.blobId;
+      const b = blobMap?.get(m.blobId);
+      const mt = b?.mimeType?.trim();
+      if (mt) msg.blobMimeType = mt;
+      if (b?.contentLength != null) {
+        msg.blobContentLength = b.contentLength;
+      }
+      const fn = b?.fileName?.trim();
+      if (fn) msg.blobFileName = fn;
+    }
     if (m.status != null) msg.status = m.status;
     const meta = m.meta?.trim();
     if (meta) msg.meta = meta;
     return msg;
+  }
+
+  private async messagesWithBlobMeta(
+    rows: MessageModel[],
+  ): Promise<ThreadMessage[]> {
+    const ids = [
+      ...new Set(
+        rows.map((r) => r.blobId).filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    let blobMap = new Map<string, AppBlob>();
+    if (ids.length > 0) {
+      const blobRows = await this.blobs()
+        .query(Q.where("id", Q.oneOf(ids)))
+        .fetch();
+      blobMap = new Map(blobRows.map((b) => [b.id, b]));
+    }
+    return rows.map((r) => this.modelToMessage(r, blobMap));
   }
 
   async countForThread(threadId: string): Promise<number> {
@@ -60,7 +115,7 @@ export class MessageRepository extends BaseRepository {
         Q.sortBy("id", "asc"),
       )
       .fetch();
-    return rows.map((r) => this.modelToMessage(r));
+    return this.messagesWithBlobMeta(rows);
   }
 
   async listRecentForThread(
@@ -75,7 +130,8 @@ export class MessageRepository extends BaseRepository {
         Q.take(limit),
       )
       .fetch();
-    return rows.reverse().map((r) => this.modelToMessage(r));
+    const ordered = rows.reverse();
+    return this.messagesWithBlobMeta(ordered);
   }
 
   async listBeforeCursorForThread(
@@ -98,13 +154,16 @@ export class MessageRepository extends BaseRepository {
         Q.take(limit),
       )
       .fetch();
-    return rows.reverse().map((r) => this.modelToMessage(r));
+    const ordered = rows.reverse();
+    return this.messagesWithBlobMeta(ordered);
   }
 
   async insert(
     threadId: string,
     message: ThreadMessage,
     blobPayload?: Uint8Array | null,
+    blobMime?: string | null,
+    blobFileName?: string | null,
   ): Promise<ThreadMessage> {
     if (
       message.meta !== undefined &&
@@ -135,9 +194,11 @@ export class MessageRepository extends BaseRepository {
     }
 
     const contentLengthForRow =
-      bodyText != null && bodyText.length > 0
-        ? utf8ByteLength(bodyText)
-        : message.contentLength;
+      blobPayload != null && blobPayload.byteLength > 0
+        ? blobPayload.byteLength
+        : bodyText != null && bodyText.length > 0
+          ? utf8ByteLength(bodyText)
+          : message.contentLength;
 
     const db = this.db();
     await db.write(async () => {
@@ -146,6 +207,10 @@ export class MessageRepository extends BaseRepository {
         await this.blobs().create((rec) => {
           rec._raw.id = blobId!;
           rec.bodyBase64 = b64;
+          rec.messageId = message.id;
+          rec.mimeType = blobMime?.trim() ? blobMime.trim() : undefined;
+          rec.contentLength = blobPayload.byteLength;
+          rec.fileName = blobFileName?.trim() ? blobFileName.trim() : undefined;
         });
       }
       await this.messages().create((rec) => {
@@ -172,6 +237,13 @@ export class MessageRepository extends BaseRepository {
     else delete out.body;
     if (blobId != null) out.blobId = blobId;
     else delete out.blobId;
+    if (blobPayload != null && blobPayload.byteLength > 0) {
+      out.blobContentLength = blobPayload.byteLength;
+      const mt = blobMime?.trim();
+      if (mt) out.blobMimeType = mt;
+      const fn = blobFileName?.trim();
+      if (fn) out.blobFileName = fn;
+    }
     return out;
   }
 
@@ -216,7 +288,13 @@ export class MessageRepository extends BaseRepository {
       v.blobBodyBase64 != null && v.blobBodyBase64.length > 0
         ? base64ToUint8Array(v.blobBodyBase64)
         : undefined;
-    const saved = await this.insert(v.thread_id, message, blobPayload);
+    const saved = await this.insert(
+      v.thread_id,
+      message,
+      blobPayload,
+      v.blobMimeType?.trim() ? v.blobMimeType.trim() : null,
+      v.blobFileName?.trim() ? v.blobFileName.trim() : null,
+    );
     logThreadMessage("sqlite.message.create.done", {
       threadId: v.thread_id,
       id: saved.id,

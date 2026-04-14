@@ -8,6 +8,7 @@
     "paths": {
       "app/*": ["app/*"],
       "components/*": ["components/*"],
+      "db/*": ["data/*"],
       "hooks/*": ["hooks/*"],
       "lib/*": ["lib/*"],
       "modules/*": ["modules/*"],
@@ -15,10 +16,5 @@
       "utils/*": ["utils/*"]
     }
   },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts"
-  ]
+  "include": ["**/*.ts", "**/*.tsx", ".expo/types/**/*.ts", "expo-env.d.ts"]
 }

@@ -21,4 +21,10 @@ export type ThreadMessage = {
   body?: string;
   /** When set, large/binary payload lives in `blobs` (optional FK). */
   blobId?: string;
+  /** From `blobs.mime_type` when `blobId` is set (for attachment UI). */
+  blobMimeType?: string;
+  /** Raw byte length from `blobs.content_length` (or message row for legacy rows). */
+  blobContentLength?: number;
+  /** Original filename from URL/path when stored on the `blobs` row. */
+  blobFileName?: string;
 };

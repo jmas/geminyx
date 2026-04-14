@@ -7,8 +7,16 @@ import { normalizeGeminiCapsuleRootUrl } from "lib/models/gemini";
  */
 export const SEED_CAPSULE_CATEGORIES: { name: string; sortOrder: number }[] = [
   { name: "Search & discovery", sortOrder: 0 },
-  { name: "Games", sortOrder: 1 },
-  { name: "Forums & community", sortOrder: 2 },
+  { name: "News & media", sortOrder: 1 },
+  { name: "Games", sortOrder: 2 },
+  { name: "Entertainment", sortOrder: 3 },
+  { name: "Education & learning", sortOrder: 4 },
+  { name: "Forums & community", sortOrder: 5 },
+  { name: "Technology & development", sortOrder: 6 },
+  { name: "Shopping & commerce", sortOrder: 7 },
+  { name: "Personal & blogs", sortOrder: 8 },
+  { name: "Art & design", sortOrder: 9 },
+  { name: "Tools & utilities", sortOrder: 10 },
 ];
 
 export type SeedCapsuleTemplate = Omit<Capsule, "id"> & {
@@ -23,7 +31,7 @@ export type SeedCapsuleTemplate = Omit<Capsule, "id"> & {
 export const SEED_CAPSULE_TEMPLATES: SeedCapsuleTemplate[] = [
   {
     name: "Kennedy Search",
-    avatarIcon: "🔍",
+    avatarIcon: "🔭",
     url: "gemini://kennedy.gemi.dev",
     description: "Search through Gemini capsules",
     categoryName: "Search & discovery",
@@ -32,15 +40,39 @@ export const SEED_CAPSULE_TEMPLATES: SeedCapsuleTemplate[] = [
     name: "Astrobotany",
     avatarIcon: "🪴",
     url: "gemini://astrobotany.mozz.us",
-    description: "Text game where we grow own plant",
+    description: "A community gardening experience in geminispace",
     categoryName: "Games",
   },
   {
-    name: "BBS GeminiSpace",
+    name: "GeminiSpace BBS",
     avatarIcon: "💬",
     url: "gemini://bbs.geminispace.org",
-    description: "Social network or forum",
+    description: "Discussion forums, microblogging",
     categoryName: "Forums & community",
+  },
+  {
+    name: "TildeTeam Community",
+    avatarIcon: "🌐",
+    url: "gemini://tilde.team",
+    description:
+      "A digital community for socializing, learning, and making cool stuff",
+    categoryName: "Forums & community",
+  },
+  {
+    name: "CAPCOM Feeds",
+    avatarIcon: "📰",
+    url: "gemini://gemini.circumlunar.space/capcom/",
+    description:
+      "A public aggregator of subscribable Gemini pages and Gemini Atom feeds",
+    categoryName: "News & media",
+  },
+  {
+    name: "GemiDev",
+    avatarIcon: "🛠️",
+    url: "gemini://gemi.dev",
+    description:
+      "Various services for Gemini like Gemipedia or Wayback machine",
+    categoryName: "Tools & utilities",
   },
 ];
 

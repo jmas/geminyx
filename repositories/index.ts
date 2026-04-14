@@ -4,10 +4,13 @@ import { MessageRepository } from "./messageRepository";
 export {
   ROOT_TAB_ROUTE_NAMES,
   SETTINGS_TAB_ACTIVE_KEY,
+  SETTINGS_UI_LANGUAGE_KEY,
+  parseAppLanguagePreference,
   clearSettingsUiCache,
   getCachedInitialRootTab,
   preloadSettingsFromDatabase,
   settingsRepo,
+  type AppLanguagePreference,
   type RootTabRouteName,
 } from "./settingsRepository";
 export { BaseRepository } from "./baseRepository";
@@ -17,7 +20,7 @@ export {
   type AccountInsert,
   type AccountPatch,
 } from "./accountRepository";
-export { BlobRepository } from "./blobRepository";
+export { BlobRepository, type BlobViewPayload } from "./blobRepository";
 export {
   CapsuleRepository,
   capsulesRepo,
@@ -27,7 +30,11 @@ export {
 } from "./capsuleRepository";
 export { CategoryRepository, categoriesRepo } from "./categoryRepository";
 export { ThreadRepository, threadsRepo } from "./threadRepository";
-export { MessageRepository } from "./messageRepository";
+export {
+  MESSAGES_PAGE_SIZE,
+  MessageRepository,
+  type MessageCreateVariables,
+} from "./messageRepository";
 
 export const blobsRepo = new BlobRepository();
 export const messagesRepo = new MessageRepository();

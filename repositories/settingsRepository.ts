@@ -7,6 +7,18 @@ import { accountsRepo } from "repositories/accountRepository";
 /** Row key for persisted root tab; value is JSON string of a tab route name. */
 export const SETTINGS_TAB_ACTIVE_KEY = "tab_active" as const;
 
+/** UI language: follow device, or force English / Ukrainian. Stored as JSON string. */
+export const SETTINGS_UI_LANGUAGE_KEY = "ui_language" as const;
+
+export type AppLanguagePreference = "system" | "en" | "uk";
+
+export function parseAppLanguagePreference(
+  raw: unknown,
+): AppLanguagePreference | undefined {
+  if (raw === "system" || raw === "en" || raw === "uk") return raw;
+  return undefined;
+}
+
 export const ROOT_TAB_ROUTE_NAMES = ["index", "threads", "settings"] as const;
 export type RootTabRouteName = (typeof ROOT_TAB_ROUTE_NAMES)[number];
 

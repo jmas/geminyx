@@ -14,7 +14,7 @@ alwaysApply: true
 
 Configured aliases (see `tsconfig.json` `paths`):
 
-- `app/...`, `components/...`, `hooks/...`, `lib/...`, `modules/...`, `screens/...`, `utils/...`
+- `app/...`, `components/...`, `db/...`, `hooks/...`, `lib/...`, `modules/...`, `screens/...`, `utils/...`
 
 The `repositories` package resolves via `baseUrl` (barrel at `repositories/index.ts`):
 

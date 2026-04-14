@@ -94,9 +94,15 @@ export function BlockingProgressModal({
             <View
               style={[styles.progressTrack, { backgroundColor: chrome.track }]}
             >
-              <Animated.View
-                style={[styles.progressFill, barStyle, { backgroundColor: chrome.fill }]}
-              />
+              <Animated.View style={[styles.progressFill, barStyle]}>
+                {/*
+                  Fill color must live on a plain View: PlatformColor() values are
+                  objects Reanimated cannot use as animated colors ("Invalid color value").
+                 */}
+                <View
+                  style={[StyleSheet.absoluteFill, { backgroundColor: chrome.fill }]}
+                />
+              </Animated.View>
             </View>
           ) : null}
         </Pressable>

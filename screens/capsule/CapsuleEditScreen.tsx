@@ -1,11 +1,14 @@
+import { HeaderButton } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
 import { useCallback, useLayoutEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
-  Pressable,
+  Alert,
+  Platform,
   StyleSheet,
   Text,
   useColorScheme,
@@ -21,21 +24,24 @@ import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import { useAccountActive } from "hooks/account/useAccountActive";
 import { queryKeys } from "lib/queryKeys";
 import {
+  destructiveTintColor,
   headerTitleColorForScheme,
   rootScreenBackgroundForScheme,
-  systemBlueForScheme,
 } from "lib/theme/appColors";
 import { categoriesRepo, capsulesRepo } from "repositories";
 import { alertError } from "utils/error";
 import { firstParam } from "utils/searchParams";
 
+const CAPSULE_EDIT_BACK_CHEVRON_SIZE = 26;
+const CAPSULE_EDIT_DELETE_ICON_SIZE = 22;
+
 export function CapsuleEditScreen() {
+  const { t } = useTranslation();
   const navigation = useNavigation();
   const router = useRouter();
   const scheme = useColorScheme();
   const palette: CapsuleFormModalPalette = selectCapsuleUiPalette(scheme);
   const bg = rootScreenBackgroundForScheme(scheme);
-  const tint = systemBlueForScheme(scheme);
   const titleColor = headerTitleColorForScheme(scheme);
 
   const params = useLocalSearchParams<{ id: string }>();
@@ -62,10 +68,10 @@ export function CapsuleEditScreen() {
 
   const categoryOptions = useMemo(
     () => [
-      { id: "", name: "General" },
       ...categories.map((c) => ({ id: c.id, name: c.name })),
+      { id: "", name: t("capsules.sectionGeneral") },
     ],
-    [categories],
+    [categories, t],
   );
 
   const {
@@ -91,20 +97,96 @@ export function CapsuleEditScreen() {
     }, [capsuleId, refetchCapsule]),
   );
 
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => capsulesRepo.deleteCascade(id),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: queryKeys.capsules.all });
+      await queryClient.invalidateQueries({ queryKey: queryKeys.threads.all });
+      router.replace("/(tabs)/threads" as Href);
+    },
+    onError: (e) => {
+      console.error("CapsuleEditScreen delete failed", e);
+      Alert.alert(
+        t("capsules.deleteErrorTitle"),
+        t("capsules.deleteErrorBody"),
+      );
+    },
+  });
+
+  const handleDeletePress = useCallback(() => {
+    if (!capsule) return;
+    Alert.alert(
+      t("capsules.deleteCapsuleTitle"),
+      t("capsules.deleteCapsuleMsg", { name: capsule.name }),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("common.delete"),
+          style: "destructive",
+          onPress: () => {
+            void deleteMutation.mutateAsync(capsule.id);
+          },
+        },
+      ],
+    );
+  }, [capsule, deleteMutation, t]);
+
   useLayoutEffect(() => {
     navigation.setOptions({
+      headerLeftContainerStyle: { paddingLeft: 8 },
       headerLeft: () => (
-        <Pressable
+        <HeaderButton
           onPress={() => router.back()}
-          hitSlop={12}
-          style={({ pressed }) => [pressed && { opacity: 0.55 }]}
-          accessibilityLabel="Back"
+          accessibilityLabel={t("common.back")}
         >
-          <Ionicons name="chevron-back" size={26} color={tint} />
-        </Pressable>
+          <Ionicons
+            name="chevron-back"
+            size={CAPSULE_EDIT_BACK_CHEVRON_SIZE}
+            color={titleColor}
+            style={
+              Platform.OS === "ios"
+                ? { lineHeight: CAPSULE_EDIT_BACK_CHEVRON_SIZE }
+                : undefined
+            }
+          />
+        </HeaderButton>
       ),
+      ...(capsule
+        ? {
+            headerRightContainerStyle: { paddingRight: 8 },
+            headerRight: () => (
+              <HeaderButton
+                onPress={handleDeletePress}
+                disabled={deleteMutation.isPending}
+                accessibilityLabel={t("capsules.a11yDeleteCapsule")}
+              >
+                <Ionicons
+                  name="trash-outline"
+                  size={CAPSULE_EDIT_DELETE_ICON_SIZE}
+                  color={destructiveTintColor()}
+                  style={
+                    Platform.OS === "ios"
+                      ? { lineHeight: CAPSULE_EDIT_DELETE_ICON_SIZE }
+                      : undefined
+                  }
+                />
+              </HeaderButton>
+            ),
+          }
+        : {
+            headerRight: undefined,
+            headerRightContainerStyle: undefined,
+          }),
     });
-  }, [navigation, router, tint]);
+  }, [
+    capsule,
+    deleteMutation.isPending,
+    handleDeletePress,
+    navigation,
+    router,
+    titleColor,
+    t,
+  ]);
 
   const initialValues: CapsuleFormValues = useMemo(
     () => ({
@@ -134,6 +216,9 @@ export function CapsuleEditScreen() {
           url: values.url.trim(),
           description: values.description.trim(),
           categoryId: values.categoryId.trim() || null,
+          ...(capsule?.libraryVisible === false
+            ? { libraryVisible: true }
+            : {}),
         });
         await queryClient.invalidateQueries({
           queryKey: queryKeys.capsules.detail(capsuleId),
@@ -141,22 +226,27 @@ export function CapsuleEditScreen() {
         await queryClient.invalidateQueries({
           queryKey: queryKeys.capsules.listForActive(),
         });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.threads.all,
+        });
         router.replace({ pathname: "/capsule/[id]", params: { id: capsuleId } } as unknown as Href);
       } catch (e) {
         console.error("updateCapsule failed", e);
-        alertError(e, "Could not save capsule.", "Could not save capsule");
+        alertError(e, t("capsuleEdit.saveError"), t("capsuleEdit.saveError"));
       } finally {
         setSavePending(false);
         setSubmitting(false);
       }
     },
-    [capsuleId, queryClient, router],
+    [capsule?.libraryVisible, capsuleId, queryClient, router, t],
   );
 
   if (!capsuleId) {
     return (
       <View style={[styles.centered, { backgroundColor: bg }]}>
-        <Text style={{ color: palette.textSecondary }}>Missing capsule id.</Text>
+        <Text style={{ color: palette.textSecondary }}>
+          {t("capsuleEdit.missingId")}
+        </Text>
       </View>
     );
   }
@@ -172,7 +262,7 @@ export function CapsuleEditScreen() {
   if (!capsule) {
     return (
       <View style={[styles.centered, { backgroundColor: bg }]}>
-        <Text style={{ color: titleColor }}>Capsule not found.</Text>
+        <Text style={{ color: titleColor }}>{t("capsuleEdit.notFound")}</Text>
       </View>
     );
   }
@@ -184,7 +274,7 @@ export function CapsuleEditScreen() {
         scheme={scheme}
         isPending={savePending}
         initialValues={initialValues}
-        submitLabel="Save"
+        submitLabel={t("common.save")}
         autoNameFromUrl={false}
         categoryOptions={categoryOptions}
         categoryOptionsLoading={categoriesPending}

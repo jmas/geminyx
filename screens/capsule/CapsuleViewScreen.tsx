@@ -1,11 +1,13 @@
+import { HeaderButton } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter, type Href } from "expo-router";
-import { useCallback, useLayoutEffect, useMemo } from "react";
+import { useCallback, useLayoutEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   ActivityIndicator,
-  Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,15 +21,18 @@ import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import { useAccountActive } from "hooks/account/useAccountActive";
 import { queryKeys } from "lib/queryKeys";
 import {
-  destructiveTintColor,
   headerTitleColorForScheme,
   rootScreenBackgroundForScheme,
   systemBlueForScheme,
 } from "lib/theme/appColors";
 import { capsulesRepo } from "repositories";
+import { alertError } from "utils/error";
 import { firstParam } from "utils/searchParams";
 
+const CAPSULE_VIEW_EDIT_ICON_SIZE = 24;
+
 export function CapsuleViewScreen() {
+  const { t } = useTranslation();
   const navigation = useNavigation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -36,13 +41,13 @@ export function CapsuleViewScreen() {
   const bg = rootScreenBackgroundForScheme(scheme);
   const tint = systemBlueForScheme(scheme);
   const titleColor = headerTitleColorForScheme(scheme);
-  const destructive = destructiveTintColor();
 
   const params = useLocalSearchParams<{ id: string }>();
   const capsuleId = firstParam(params.id) ?? "";
 
   const queryClient = useQueryClient();
   const { data: activeAccount, isPending: activePending } = useAccountActive();
+  const [addToLibraryPending, setAddToLibraryPending] = useState(false);
 
   const {
     data: capsule,
@@ -69,12 +74,6 @@ export function CapsuleViewScreen() {
 
   const notFound = !loading && !capsule;
 
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      title: "Capsule",
-    });
-  }, [navigation]);
-
   const onOpenThread = useCallback(() => {
     if (!capsule) return;
     router.push({
@@ -83,38 +82,6 @@ export function CapsuleViewScreen() {
     } as unknown as Href);
   }, [capsule, router]);
 
-  const onDelete = useCallback(() => {
-    if (!capsule) return;
-    Alert.alert(
-      "Delete capsule?",
-      `Delete “${capsule.name}” and all messages? This cannot be undone.`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            void (async () => {
-              try {
-                await capsulesRepo.deleteCascade(capsule.id);
-                await queryClient.invalidateQueries({
-                  queryKey: queryKeys.capsules.all,
-                });
-                await queryClient.invalidateQueries({
-                  queryKey: queryKeys.threads.all,
-                });
-                router.replace("/(tabs)/threads" as Href);
-              } catch (e) {
-                console.error(e);
-                Alert.alert("Could not delete", "Please try again.");
-              }
-            })();
-          },
-        },
-      ],
-    );
-  }, [capsule, queryClient, router]);
-
   const onEdit = useCallback(() => {
     if (!capsule) return;
     router.push({
@@ -122,6 +89,63 @@ export function CapsuleViewScreen() {
       params: { id: capsule.id },
     } as unknown as Href);
   }, [capsule, router]);
+
+  const isHiddenFromLibrary = capsule?.libraryVisible === false;
+
+  useLayoutEffect(() => {
+    const showEditInHeader = Boolean(capsule) && !isHiddenFromLibrary;
+    if (!showEditInHeader) {
+      navigation.setOptions({
+        title: t("capsules.viewTitle"),
+        headerRight: undefined,
+        headerRightContainerStyle: undefined,
+      });
+      return;
+    }
+    navigation.setOptions({
+      title: t("capsules.viewTitle"),
+      headerRightContainerStyle: { paddingRight: 8 },
+      headerRight: () => (
+        <HeaderButton
+          onPress={onEdit}
+          accessibilityLabel={t("capsules.a11yEditCapsule")}
+        >
+          <Ionicons
+            name="create-outline"
+            size={CAPSULE_VIEW_EDIT_ICON_SIZE}
+            color={titleColor}
+            style={
+              Platform.OS === "ios"
+                ? { lineHeight: CAPSULE_VIEW_EDIT_ICON_SIZE }
+                : undefined
+            }
+          />
+        </HeaderButton>
+      ),
+    });
+  }, [capsule, isHiddenFromLibrary, navigation, onEdit, titleColor, t]);
+
+  const onAddCapsuleToLibrary = useCallback(() => {
+    if (!capsule) return;
+    void (async () => {
+      try {
+        setAddToLibraryPending(true);
+        await capsulesRepo.patch(capsule.id, { libraryVisible: true });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.capsules.all,
+        });
+        await queryClient.invalidateQueries({
+          queryKey: queryKeys.threads.all,
+        });
+        await refetchCapsule();
+      } catch (e) {
+        console.error(e);
+        alertError(e, "Could not add capsule to your library.", "Add capsule");
+      } finally {
+        setAddToLibraryPending(false);
+      }
+    })();
+  }, [capsule, queryClient, refetchCapsule]);
 
   const description = useMemo(
     () => capsule?.description?.trim() ?? "",
@@ -196,37 +220,30 @@ export function CapsuleViewScreen() {
         <Text style={styles.primaryBtnLabel}>Thread</Text>
       </Pressable>
 
-      <Pressable
-        onPress={onEdit}
-        style={({ pressed }) => [
-          styles.editBtn,
-          {
-            borderColor: tint,
-            opacity: pressed ? 0.75 : 1,
-          },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="Edit capsule"
-      >
-        <Ionicons name="create-outline" size={22} color={tint} />
-        <Text style={[styles.editBtnLabel, { color: tint }]}>Edit</Text>
-      </Pressable>
-
-      <Pressable
-        onPress={onDelete}
-        style={({ pressed }) => [
-          styles.deleteBtn,
-          {
-            borderColor: "rgba(255, 59, 48, 0.55)",
-            opacity: pressed ? 0.75 : 1,
-          },
-        ]}
-        accessibilityRole="button"
-        accessibilityLabel="Delete capsule"
-      >
-        <Ionicons name="trash-outline" size={22} color={destructive} />
-        <Text style={[styles.deleteBtnLabel, { color: destructive }]}>Delete</Text>
-      </Pressable>
+      {isHiddenFromLibrary ? (
+        <Pressable
+          onPress={onAddCapsuleToLibrary}
+          disabled={addToLibraryPending}
+          style={({ pressed }) => [
+            styles.editBtn,
+            {
+              borderColor: tint,
+              opacity: addToLibraryPending ? 0.55 : pressed ? 0.75 : 1,
+            },
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Add capsule to library"
+        >
+          {addToLibraryPending ? (
+            <ActivityIndicator color={tint} />
+          ) : (
+            <>
+              <Ionicons name="add-outline" size={22} color={tint} />
+              <Text style={[styles.editBtnLabel, { color: tint }]}>Add Capsule</Text>
+            </>
+          )}
+        </Pressable>
+      ) : null}
     </ScrollView>
   );
 }
@@ -270,21 +287,6 @@ const styles = StyleSheet.create({
   },
   primaryBtnLabel: {
     color: "#ffffff",
-    fontSize: 17,
-    fontWeight: "600",
-  },
-  deleteBtn: {
-    marginTop: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 12,
-    paddingVertical: 14,
-    minHeight: 48,
-    gap: 10,
-    borderWidth: StyleSheet.hairlineWidth * 2,
-  },
-  deleteBtnLabel: {
     fontSize: 17,
     fontWeight: "600",
   },

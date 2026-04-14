@@ -2,7 +2,6 @@ export type Account = {
   id: string;
   name: string;
   email?: string;
-  avatarUrl?: string;
   /** Endpoint for this account’s capsule / backend */
   capsuleUrl?: string;
   /**

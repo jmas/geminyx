@@ -18,14 +18,12 @@ import { useKeyboardHeight } from "hooks/useKeyboardHeight";
 export type AccountFormValues = {
   name: string;
   email: string;
-  avatarUrl: string;
   capsuleUrl: string;
 };
 
 export const accountFormEmptyValues: AccountFormValues = {
   name: "",
   email: "",
-  avatarUrl: "",
   capsuleUrl: "",
 };
 
@@ -50,10 +48,6 @@ export const accountFormValidationSchema = yup.object({
       "Enter a valid email or leave blank",
       (v) => !v || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
     ),
-  avatarUrl: yup
-    .string()
-    .trim()
-    .test("url", "Must be a valid URL", isEmptyOrValidUrl),
   capsuleUrl: yup
     .string()
     .trim()
@@ -187,33 +181,6 @@ export function AccountForm({
                 {touched.email && errors.email ? (
                   <Text style={[styles.fieldError, { color: palette.error }]}>
                     {errors.email}
-                  </Text>
-                ) : null}
-              </FieldBlock>
-
-              <FieldBlock label="Avatar URL" palette={palette}>
-                <TextInput
-                  value={values.avatarUrl}
-                  onChangeText={handleChange("avatarUrl")}
-                  onBlur={handleBlur("avatarUrl")}
-                  placeholder="https://…"
-                  placeholderTextColor={palette.placeholder}
-                  autoCorrect={false}
-                  autoCapitalize="none"
-                  keyboardType="url"
-                  editable={!isBusy}
-                  style={[
-                    styles.fieldInput,
-                    {
-                      backgroundColor: palette.fieldBg,
-                      borderColor: palette.fieldBorder,
-                      color: palette.fieldText,
-                    },
-                  ]}
-                />
-                {touched.avatarUrl && errors.avatarUrl ? (
-                  <Text style={[styles.fieldError, { color: palette.error }]}>
-                    {errors.avatarUrl}
                   </Text>
                 ) : null}
               </FieldBlock>

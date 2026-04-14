@@ -26,6 +26,7 @@ export class ThreadRepository extends BaseRepository {
         avatarIcon: c.avatarIcon?.trim() ? c.avatarIcon.trim() : undefined,
         url: c.url ?? undefined,
         description: c.description?.trim() ? c.description.trim() : undefined,
+        libraryVisible: c.libraryVisible !== false,
       },
     };
   }
@@ -34,6 +35,7 @@ export class ThreadRepository extends BaseRepository {
     const caps = await this.capsules()
       .query(Q.where("account_id", accountId))
       .fetch();
+    /** Include threads for hidden capsules so visit-only chats stay in the list. */
     const capIds = caps.map((c) => c.id);
     if (capIds.length === 0) return [];
 

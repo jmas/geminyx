@@ -1,9 +1,12 @@
-import type { Capsule } from "lib/models/capsule";
-import { geminiOriginsMatch, normalizeGeminiCapsuleRootUrl } from "lib/models/gemini";
-import { SEED_CAPSULE_TEMPLATES } from "lib/resources/seedCapsules";
-import { newId } from "lib/db/utils";
-import { Capsule as CapsuleModel } from "lib/watermelon/models/Capsule";
 import { Q } from "@nozbe/watermelondb";
+import { SEED_CAPSULE_TEMPLATES } from "data/seeds/capsules";
+import { newId } from "lib/db/utils";
+import type { Capsule } from "lib/models/capsule";
+import {
+  geminiOriginsMatch,
+  normalizeGeminiCapsuleRootUrl,
+} from "lib/models/gemini";
+import { Capsule as CapsuleModel } from "lib/watermelon/models/Capsule";
 import { BaseRepository } from "repositories/baseRepository";
 import { categoriesRepo } from "repositories/categoryRepository";
 import { threadsRepo } from "repositories/threadRepository";
@@ -17,6 +20,11 @@ export type CapsuleInsert = {
   accountId: string;
   /** When unset or empty, the capsule is uncategorized (shown as General). */
   categoryId?: string;
+  /**
+   * When false, the capsule is hidden from the library and thread list (visit-only).
+   * Defaults to true.
+   */
+  libraryVisible?: boolean;
 };
 
 export type CapsulePatch = {
@@ -26,6 +34,8 @@ export type CapsulePatch = {
   description?: string;
   /** Pass `null` or `""` to clear the category (General). Omit to leave unchanged. */
   categoryId?: string | null;
+  /** Set true to show the capsule in the library and thread list. */
+  libraryVisible?: boolean;
 };
 
 export type CapsuleListSection = {
@@ -44,6 +54,7 @@ export class CapsuleRepository extends BaseRepository {
       url: m.url ?? undefined,
       description: m.description?.trim() ? m.description.trim() : undefined,
       categoryId: rawCat ? rawCat : undefined,
+      libraryVisible: m.libraryVisible !== false,
     };
   }
 
@@ -55,7 +66,8 @@ export class CapsuleRepository extends BaseRepository {
     const rows = await this.capsules()
       .query(Q.where("account_id", accountId))
       .fetch();
-    const sorted = [...rows].sort((a, b) =>
+    const visible = rows.filter((m) => m.libraryVisible !== false);
+    const sorted = [...visible].sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" }),
     );
     return sorted.map((m) => this.modelToCapsule(m));
@@ -63,15 +75,18 @@ export class CapsuleRepository extends BaseRepository {
 
   /**
    * Capsules grouped by category for sectioned lists. “General” is uncategorized
-   * (`categoryId` unset); empty sections are omitted.
+   * (`categoryId` unset) and listed last; empty sections are omitted.
    */
-  async listSectionsForAccount(accountId: string): Promise<CapsuleListSection[]> {
+  async listSectionsForAccount(
+    accountId: string,
+  ): Promise<CapsuleListSection[]> {
     const [rows, categories] = await Promise.all([
       this.capsules().query(Q.where("account_id", accountId)).fetch(),
       categoriesRepo.listOrdered(accountId),
     ]);
+    const rowsVisible = rows.filter((m) => m.libraryVisible !== false);
     const catById = new Map(categories.map((c) => [c.id, c] as const));
-    const modelCaps = rows.map((m) => this.modelToCapsule(m));
+    const modelCaps = rowsVisible.map((m) => this.modelToCapsule(m));
     const sortByName = (a: Capsule, b: Capsule) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 
@@ -89,13 +104,6 @@ export class CapsuleRepository extends BaseRepository {
     general.sort(sortByName);
 
     const sections: CapsuleListSection[] = [];
-    if (general.length) {
-      sections.push({
-        title: "General",
-        categoryId: null,
-        data: general,
-      });
-    }
     for (const cat of categories) {
       const data = (byCatId.get(cat.id) ?? []).sort(sortByName);
       if (data.length) {
@@ -105,6 +113,13 @@ export class CapsuleRepository extends BaseRepository {
           data,
         });
       }
+    }
+    if (general.length) {
+      sections.push({
+        title: "General",
+        categoryId: null,
+        data: general,
+      });
     }
     return sections;
   }
@@ -128,13 +143,25 @@ export class CapsuleRepository extends BaseRepository {
       const m = await this.capsules().find(capsuleId);
       const existing = this.modelToCapsule(m);
       const nextName = (patch.name ?? existing.name).trim();
-      const nextAvatarIcon = (patch.avatarIcon ?? existing.avatarIcon ?? "").trim();
+      const nextAvatarIcon = (
+        patch.avatarIcon ??
+        existing.avatarIcon ??
+        ""
+      ).trim();
       const nextUrl = (patch.url ?? existing.url ?? "").trim();
-      const nextDescription = (patch.description ?? existing.description ?? "").trim();
+      const nextDescription = (
+        patch.description ??
+        existing.description ??
+        ""
+      ).trim();
       let nextCategoryId = existing.categoryId;
       if (patch.categoryId !== undefined) {
         const raw = patch.categoryId?.trim();
         nextCategoryId = raw ? raw : undefined;
+      }
+      let nextLibraryVisible = existing.libraryVisible !== false;
+      if (patch.libraryVisible !== undefined) {
+        nextLibraryVisible = patch.libraryVisible;
       }
 
       await m.update((rec) => {
@@ -143,6 +170,7 @@ export class CapsuleRepository extends BaseRepository {
         rec.url = nextUrl ? nextUrl : undefined;
         rec.description = nextDescription ? nextDescription : undefined;
         rec.categoryId = nextCategoryId;
+        rec.libraryVisible = nextLibraryVisible;
       });
     });
   }
@@ -171,6 +199,7 @@ export class CapsuleRepository extends BaseRepository {
     const url = input.url?.trim();
     const description = input.description?.trim();
     const categoryRaw = input.categoryId?.trim();
+    const libraryVisible = input.libraryVisible !== false;
     const db = this.db();
     await db.write(async () => {
       await this.capsules().create((rec) => {
@@ -181,6 +210,7 @@ export class CapsuleRepository extends BaseRepository {
         rec.description = description ? description : undefined;
         rec.accountId = accountId;
         rec.categoryId = categoryRaw ? categoryRaw : undefined;
+        rec.libraryVisible = libraryVisible;
       });
     });
     const row = await this.getByIdForAccount(accountId, id);
@@ -201,14 +231,19 @@ export class CapsuleRepository extends BaseRepository {
   ): Promise<Capsule | null> {
     const raw = geminiUrl.trim();
     if (!raw.length) return null;
-    const needle =
-      /^gemini:\/\//i.test(raw) ? normalizeGeminiCapsuleRootUrl(raw) || raw : raw;
-    const caps = await this.listForAccount(accountId);
-    for (const c of caps) {
+    const needle = /^gemini:\/\//i.test(raw)
+      ? normalizeGeminiCapsuleRootUrl(raw) || raw
+      : raw;
+    const allRows = await this.capsules()
+      .query(Q.where("account_id", accountId))
+      .fetch();
+    for (const m of allRows) {
+      const c = this.modelToCapsule(m);
       const u = c.url?.trim();
       if (!u) continue;
-      const hay =
-        /^gemini:\/\//i.test(u) ? normalizeGeminiCapsuleRootUrl(u) || u : u;
+      const hay = /^gemini:\/\//i.test(u)
+        ? normalizeGeminiCapsuleRootUrl(u) || u
+        : u;
       if (geminiOriginsMatch(hay, needle)) return c;
     }
     return null;

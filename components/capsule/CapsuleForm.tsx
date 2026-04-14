@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Formik, type FormikHelpers } from "formik";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -15,10 +15,13 @@ import {
   type ColorValue,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import EmojiPicker, { en, type EmojiType } from "rn-emoji-keyboard";
+import EmojiPicker, { type EmojiType } from "rn-emoji-keyboard";
+import type { TFunction } from "i18next";
 import * as yup from "yup";
+import { useTranslation } from "react-i18next";
 import { rnEmojiKeyboardTheme } from "components/capsule/capsuleEmojiKeyboardTheme";
 import { useKeyboardHeight } from "hooks/useKeyboardHeight";
+import { emojiKeyboardTranslation } from "lib/i18n";
 import { suggestedCapsuleNameFromGeminiUrl } from "lib/models/gemini";
 import { modalBackdropScrim } from "lib/theme/semanticUi";
 
@@ -51,22 +54,24 @@ function isEmptyOrValidUrl(value: string | undefined) {
   }
 }
 
-export const capsuleFormValidationSchema = yup.object({
-  name: yup.string().trim().required("Name is required"),
-  avatarIcon: yup
-    .string()
-    .trim()
-    .max(32, "Icon is too long"),
-  url: yup
-    .string()
-    .trim()
-    .test("url", "Must be a valid URL", isEmptyOrValidUrl),
-  description: yup
-    .string()
-    .trim()
-    .max(500, "Description must be at most 500 characters"),
-  categoryId: yup.string(),
-});
+export function buildCapsuleFormValidationSchema(t: TFunction) {
+  return yup.object({
+    name: yup.string().trim().required(t("capsuleForm.validation.nameRequired")),
+    avatarIcon: yup
+      .string()
+      .trim()
+      .max(32, t("capsuleForm.validation.iconTooLong")),
+    url: yup
+      .string()
+      .trim()
+      .test("url", t("capsuleForm.validation.urlInvalid"), isEmptyOrValidUrl),
+    description: yup
+      .string()
+      .trim()
+      .max(500, t("capsuleForm.validation.descriptionMax")),
+    categoryId: yup.string(),
+  });
+}
 
 export type CapsuleFormPalette = {
   background: ColorValue;
@@ -98,7 +103,7 @@ export type CapsuleFormProps = {
   autoNameFromUrl?: boolean;
   /** Use `useHeaderHeight()` when the form sits under a navigation header. */
   keyboardVerticalOffset?: number;
-  /** When set, shows a category picker (includes “General” as `id: ""`). */
+  /** When set, shows a category picker (includes “General” as `id: ""`, last). */
   categoryOptions?: CategoryOption[];
   categoryOptionsLoading?: boolean;
   onCancel: () => void;
@@ -113,13 +118,19 @@ export function CapsuleForm({
   scheme,
   isPending,
   initialValues = capsuleFormEmptyValues,
-  submitLabel = "Add",
+  submitLabel,
   autoNameFromUrl = true,
   categoryOptions,
   categoryOptionsLoading,
   onCancel,
   onSubmit,
 }: CapsuleFormProps) {
+  const { t } = useTranslation();
+  const resolvedSubmitLabel = submitLabel ?? t("common.add");
+  const validationSchema = useMemo(
+    () => buildCapsuleFormValidationSchema(t),
+    [t],
+  );
   const insets = useSafeAreaInsets();
   const keyboardHeight = useKeyboardHeight();
   const bottomPad = Math.max(insets.bottom, 12);
@@ -133,7 +144,7 @@ export function CapsuleForm({
     <Formik<CapsuleFormValues>
       enableReinitialize
       initialValues={initialValues}
-      validationSchema={capsuleFormValidationSchema}
+      validationSchema={validationSchema}
       onSubmit={onSubmit}
     >
       {({
@@ -148,7 +159,7 @@ export function CapsuleForm({
       }) => {
         const selectedCategoryName =
           categoryOptions?.find((o) => o.id === (values.categoryId ?? ""))
-            ?.name ?? "General";
+            ?.name ?? t("capsules.sectionGeneral");
 
         const trimmedIcon = values.avatarIcon.trim();
 
@@ -173,12 +184,12 @@ export function CapsuleForm({
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
             >
-              <FieldBlock label="Capsule URL" palette={palette}>
+              <FieldBlock label={t("capsuleForm.capsuleUrl")} palette={palette}>
                 <TextInput
                   value={values.url}
                   onChangeText={onUrlChange}
                   onBlur={handleBlur("url")}
-                  placeholder="gemini://…"
+                  placeholder={t("capsuleForm.placeholderUrl")}
                   placeholderTextColor={palette.placeholder}
                   autoCorrect={false}
                   autoCapitalize="none"
@@ -199,12 +210,12 @@ export function CapsuleForm({
                 ) : null}
               </FieldBlock>
 
-              <FieldBlock label="Name" palette={palette}>
+              <FieldBlock label={t("capsuleForm.name")} palette={palette}>
                 <TextInput
                   value={values.name}
                   onChangeText={handleChange("name")}
                   onBlur={handleBlur("name")}
-                  placeholder="Display name"
+                  placeholder={t("capsuleForm.placeholderName")}
                   placeholderTextColor={palette.placeholder}
                   autoCorrect={false}
                   autoCapitalize="words"
@@ -224,7 +235,7 @@ export function CapsuleForm({
                 ) : null}
               </FieldBlock>
 
-              <FieldBlock label="Icon" palette={palette}>
+              <FieldBlock label={t("capsuleForm.icon")} palette={palette}>
                 <View
                   style={[
                     styles.fieldInput,
@@ -239,7 +250,7 @@ export function CapsuleForm({
                     value={values.avatarIcon}
                     onChangeText={handleChange("avatarIcon")}
                     onBlur={handleBlur("avatarIcon")}
-                    placeholder="Choose or type an emoji"
+                    placeholder={t("capsuleForm.placeholderIcon")}
                     placeholderTextColor={palette.placeholder}
                     maxLength={32}
                     editable={!isPending}
@@ -263,7 +274,7 @@ export function CapsuleForm({
                           styles.iconFieldTrailingBtn,
                           pressed && { opacity: 0.55 },
                         ]}
-                        accessibilityLabel="Clear icon"
+                        accessibilityLabel={t("capsuleForm.a11yClearIcon")}
                       >
                         <Ionicons
                           name="close-circle"
@@ -280,8 +291,8 @@ export function CapsuleForm({
                         styles.iconFieldTrailingBtn,
                         pressed && { opacity: 0.55 },
                       ]}
-                      accessibilityLabel="Open emoji picker"
-                      accessibilityHint="Opens the emoji keyboard with search, categories, and skin tones"
+                      accessibilityLabel={t("capsuleForm.a11yOpenEmoji")}
+                      accessibilityHint={t("capsuleForm.a11yEmojiHint")}
                     >
                       <Ionicons
                         name="happy-outline"
@@ -299,7 +310,7 @@ export function CapsuleForm({
               </FieldBlock>
 
               {categoryOptions ? (
-                <FieldBlock label="Category" palette={palette}>
+                <FieldBlock label={t("capsuleForm.category")} palette={palette}>
                   <Pressable
                     onPress={() => setCategoryPickerOpen(true)}
                     disabled={categoryOptionsLoading || isPending}
@@ -312,13 +323,13 @@ export function CapsuleForm({
                       },
                       pressed && { opacity: 0.75 },
                     ]}
-                    accessibilityLabel="Choose category"
+                    accessibilityLabel={t("capsuleForm.a11yChooseCategory")}
                   >
                     <Text
                       style={[styles.categoryPickerText, { color: palette.fieldText }]}
                       numberOfLines={1}
                     >
-                      {categoryOptionsLoading ? "Loading…" : selectedCategoryName}
+                      {categoryOptionsLoading ? t("common.loading") : selectedCategoryName}
                     </Text>
                     <Ionicons
                       name="chevron-down"
@@ -349,8 +360,9 @@ export function CapsuleForm({
                       >
                         <Text
                           style={[styles.catModalTitle, { color: palette.fieldText }]}
+                          accessibilityRole="header"
                         >
-                          Category
+                          {t("capsuleForm.modalCategoryTitle")}
                         </Text>
                         <FlatList
                           data={categoryOptions}
@@ -387,18 +399,43 @@ export function CapsuleForm({
                             </Pressable>
                           )}
                         />
+                        <View
+                          style={[
+                            styles.catModalFooter,
+                            { borderTopColor: palette.separator },
+                          ]}
+                        >
+                          <Pressable
+                            onPress={() => setCategoryPickerOpen(false)}
+                            style={({ pressed }) => [
+                              styles.catModalDoneBtn,
+                              pressed && { opacity: 0.55 },
+                            ]}
+                            accessibilityRole="button"
+                            accessibilityLabel={t("capsuleForm.a11yDone")}
+                          >
+                            <Text
+                              style={[
+                                styles.catModalDoneLabel,
+                                { color: palette.cancelLabel },
+                              ]}
+                            >
+                              {t("common.done")}
+                            </Text>
+                          </Pressable>
+                        </View>
                       </View>
                     </View>
                   </Modal>
                 </FieldBlock>
               ) : null}
 
-              <FieldBlock label="Description" palette={palette}>
+              <FieldBlock label={t("capsuleForm.description")} palette={palette}>
                 <TextInput
                   value={values.description}
                   onChangeText={handleChange("description")}
                   onBlur={handleBlur("description")}
-                  placeholder="Optional subtitle"
+                  placeholder={t("capsuleForm.placeholderDescription")}
                   placeholderTextColor={palette.placeholder}
                   multiline
                   style={[
@@ -437,10 +474,10 @@ export function CapsuleForm({
                   styles.actionBtn,
                   pressed && { opacity: 0.55 },
                 ]}
-                accessibilityLabel="Cancel"
+                accessibilityLabel={t("capsuleForm.a11yCancel")}
               >
                 <Text style={[styles.actionLabel, { color: palette.cancelLabel }]}>
-                  Cancel
+                  {t("common.cancel")}
                 </Text>
               </Pressable>
               <Pressable
@@ -450,7 +487,9 @@ export function CapsuleForm({
                   styles.actionBtn,
                   pressed && { opacity: 0.55 },
                 ]}
-                accessibilityLabel={`${submitLabel} capsule`}
+                accessibilityLabel={t("capsules.a11ySubmitCapsule", {
+                  label: resolvedSubmitLabel,
+                })}
               >
                 {isSubmitting || isPending ? (
                   <ActivityIndicator color={palette.addLabel} />
@@ -464,7 +503,7 @@ export function CapsuleForm({
                       },
                     ]}
                   >
-                    {submitLabel}
+                    {resolvedSubmitLabel}
                   </Text>
                 )}
               </Pressable>
@@ -477,7 +516,7 @@ export function CapsuleForm({
                 void setFieldValue("avatarIcon", emoji.emoji);
               }}
               theme={rnEmojiKeyboardTheme(scheme)}
-              translation={en}
+              translation={emojiKeyboardTranslation()}
               enableSearchBar
               enableRecentlyUsed
               categoryPosition="floating"
@@ -611,16 +650,33 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   catModalTitle: {
-    fontSize: 13,
+    fontSize: 17,
     fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.3,
+    textAlign: "center",
     paddingHorizontal: 16,
     paddingTop: 14,
-    paddingBottom: 8,
+    paddingBottom: 10,
   },
   catModalList: {
     maxHeight: 320,
+  },
+  catModalFooter: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  catModalDoneBtn: {
+    minHeight: 44,
+    minWidth: 120,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  catModalDoneLabel: {
+    fontSize: 17,
+    fontWeight: "600",
   },
   catModalRow: {
     flexDirection: "row",

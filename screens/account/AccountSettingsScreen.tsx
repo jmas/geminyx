@@ -1,9 +1,13 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigation } from "@react-navigation/native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useMemo, useState } from "react";
-import { AccountSwitchModal } from "components/account/AccountSwitchModal";
+import type { TFunction } from "i18next";
+import { useLayoutEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
-  Image,
+  ActivityIndicator,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,8 +17,11 @@ import {
   type ColorValue,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AccountSwitchModal } from "components/account/AccountSwitchModal";
 import { useAccountActive } from "hooks/account/useAccountActive";
+import { syncLanguageFromSettings } from "lib/i18n";
 import type { Account } from "lib/models/account";
+import { queryKeys } from "lib/queryKeys";
 import {
   systemBlueForScheme,
   systemGreenColor,
@@ -24,10 +31,37 @@ import {
   screenContentListPaletteForScheme,
 } from "lib/theme/semanticUi";
 import { avatarHueFromId, initialsFromName } from "utils/avatar";
+import {
+  parseAppLanguagePreference,
+  settingsRepo,
+  SETTINGS_UI_LANGUAGE_KEY,
+  type AppLanguagePreference,
+} from "repositories";
 
 type SettingsPalette = ReturnType<typeof screenContentListPaletteForScheme>;
 
+const LANGUAGE_OPTIONS: AppLanguagePreference[] = ["system", "en", "uk"];
+
+const LANGUAGE_ICON_BG = "#5856D6";
+
+function labelForLanguagePreference(
+  pref: AppLanguagePreference,
+  t: TFunction,
+): string {
+  switch (pref) {
+    case "system":
+      return t("settings.languageSystem");
+    case "en":
+      return t("settings.languageEnglish");
+    case "uk":
+      return t("settings.languageUkrainian");
+  }
+}
+
 export function AccountSettingsScreen() {
+  const { t } = useTranslation();
+  const navigation = useNavigation();
+  const queryClient = useQueryClient();
   const scheme = useColorScheme();
   const insets = useSafeAreaInsets();
   const palette = useMemo(
@@ -40,18 +74,46 @@ export function AccountSettingsScreen() {
     isFetching: profileLoading,
   } = useAccountActive();
 
+  const [languageModalOpen, setLanguageModalOpen] = useState(false);
+
+  const { data: languagePref = "system" } = useQuery({
+    queryKey: queryKeys.settings.uiLanguage(),
+    queryFn: async () => {
+      const raw = await settingsRepo.getForActiveAccount(
+        SETTINGS_UI_LANGUAGE_KEY,
+      );
+      return parseAppLanguagePreference(raw) ?? "system";
+    },
+    enabled: Boolean(activeAccount?.id),
+  });
+
+  const setLanguageMutation = useMutation({
+    mutationFn: async (pref: AppLanguagePreference) => {
+      await settingsRepo.setForActiveAccount(SETTINGS_UI_LANGUAGE_KEY, pref);
+      await syncLanguageFromSettings();
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.settings.uiLanguage(),
+      });
+    },
+  });
+
   const certStatus = useMemo(() => {
     if (profileLoading) return "";
-    if (!activeAccount) return "No active account";
-    return activeAccount.geminiClientP12Base64 ? "Configured" : "Not configured";
-  }, [activeAccount, profileLoading]);
+    if (!activeAccount) return t("settings.noActiveAccount");
+    return activeAccount.geminiClientP12Base64
+      ? t("settings.certConfigured")
+      : t("settings.certNotConfigured");
+  }, [activeAccount, profileLoading, t]);
 
-  const [developerSubtitle, setDeveloperSubtitle] = useState<string>("Developer tools");
-  useEffect(() => {
-    setDeveloperSubtitle("Developer tools");
-  }, []);
+  const developerSubtitle = t("settings.developerTools");
 
   const [accountSwitchOpen, setAccountSwitchOpen] = useState(false);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({ title: t("settings.title") });
+  }, [navigation, t]);
 
   return (
     <View style={[styles.screen, { backgroundColor: palette.background }]}>
@@ -81,7 +143,7 @@ export function AccountSettingsScreen() {
             {profileLoading ? (
               <View style={styles.profileLoading}>
                 <Text style={[styles.loadingText, { color: palette.textSecondary }]}>
-                  Loading profile…
+                  {t("settings.loadingProfile")}
                 </Text>
               </View>
             ) : activeAccount ? (
@@ -106,7 +168,7 @@ export function AccountSettingsScreen() {
                       style={[styles.profileSubtitle, { color: palette.textTertiary }]}
                       numberOfLines={1}
                     >
-                      No email on this account
+                      {t("settings.noEmail")}
                     </Text>
                   )}
                 </View>
@@ -119,7 +181,7 @@ export function AccountSettingsScreen() {
               </>
             ) : (
               <Text style={[styles.loadingText, { color: palette.textSecondary }]}>
-                No active account
+                {t("settings.noActiveAccount")}
               </Text>
             )}
           </Pressable>
@@ -127,8 +189,21 @@ export function AccountSettingsScreen() {
 
         <View style={[styles.menuSection, { backgroundColor: palette.cardBg }]}>
           <MenuRow
-            label="Switch account"
-            subtitle="Choose another profile or add one"
+            label={t("settings.language")}
+            subtitle={labelForLanguagePreference(languagePref, t)}
+            iconName="language-outline"
+            iconBg={LANGUAGE_ICON_BG}
+            palette={palette}
+            onPress={() => {
+              if (!activeAccount?.id) return;
+              setLanguageModalOpen(true);
+            }}
+            disabled={profileLoading || !activeAccount}
+          />
+          <MenuSeparator palette={palette} />
+          <MenuRow
+            label={t("settings.switchAccount")}
+            subtitle={t("settings.switchAccountSubtitle")}
             iconName="swap-horizontal"
             iconBg={systemBlueForScheme(scheme)}
             palette={palette}
@@ -136,7 +211,7 @@ export function AccountSettingsScreen() {
           />
           <MenuSeparator palette={palette} />
           <MenuRow
-            label="Certificate"
+            label={t("stack.certificate")}
             subtitle={certStatus}
             iconName="shield-checkmark"
             iconBg={systemGreenColor()}
@@ -145,7 +220,7 @@ export function AccountSettingsScreen() {
           />
           <MenuSeparator palette={palette} />
           <MenuRow
-            label="Developer"
+            label={t("stack.developer")}
             subtitle={developerSubtitle}
             iconName="hammer"
             iconBg={systemOrangeColor()}
@@ -159,6 +234,104 @@ export function AccountSettingsScreen() {
         visible={accountSwitchOpen}
         onClose={() => setAccountSwitchOpen(false)}
       />
+
+      <Modal
+        visible={languageModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setLanguageModalOpen(false)}
+      >
+        <View style={styles.langModalRoot}>
+          <Pressable
+            style={styles.langModalBackdrop}
+            onPress={() => setLanguageModalOpen(false)}
+            accessibilityLabel={t("common.dismiss")}
+          />
+          <View
+            style={[
+              styles.langModalSheet,
+              {
+                backgroundColor: palette.cardBg,
+                borderColor: palette.separator,
+                marginBottom: Math.max(insets.bottom, 12),
+              },
+            ]}
+          >
+            <Text
+              style={[styles.langModalTitle, { color: palette.textPrimary }]}
+              accessibilityRole="header"
+            >
+              {t("settings.languagePickerTitle")}
+            </Text>
+            {LANGUAGE_OPTIONS.map((opt, index) => (
+              <Pressable
+                key={opt}
+                onPress={() => {
+                  void (async () => {
+                    try {
+                      await setLanguageMutation.mutateAsync(opt);
+                      setLanguageModalOpen(false);
+                    } catch (e) {
+                      console.error("set language failed", e);
+                    }
+                  })();
+                }}
+                disabled={setLanguageMutation.isPending}
+                style={({ pressed }) => [
+                  styles.langModalRow,
+                  index > 0 && {
+                    borderTopWidth: StyleSheet.hairlineWidth,
+                    borderTopColor: palette.separator,
+                  },
+                  pressed && { opacity: 0.75 },
+                ]}
+              >
+                <Text
+                  style={[styles.langModalRowLabel, { color: palette.textPrimary }]}
+                >
+                  {labelForLanguagePreference(opt, t)}
+                </Text>
+                {languagePref === opt ? (
+                  <Ionicons
+                    name="checkmark"
+                    size={22}
+                    color={systemBlueForScheme(scheme)}
+                  />
+                ) : (
+                  <View style={{ width: 22 }} />
+                )}
+              </Pressable>
+            ))}
+            {setLanguageMutation.isPending ? (
+              <View style={styles.langModalPending}>
+                <ActivityIndicator />
+              </View>
+            ) : null}
+            <View
+              style={[
+                styles.langModalFooter,
+                { borderTopColor: palette.separator },
+              ]}
+            >
+              <Pressable
+                onPress={() => setLanguageModalOpen(false)}
+                style={({ pressed }) => [
+                  styles.langModalDoneBtn,
+                  pressed && { opacity: 0.55 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={t("common.cancel")}
+              >
+                <Text
+                  style={[styles.langModalDoneLabel, { color: palette.textSecondary }]}
+                >
+                  {t("common.cancel")}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -174,6 +347,7 @@ function MenuRow({
   iconBg,
   palette,
   onPress,
+  disabled,
 }: {
   label: string;
   subtitle?: string;
@@ -181,13 +355,16 @@ function MenuRow({
   iconBg: ColorValue;
   palette: SettingsPalette;
   onPress: () => void;
+  disabled?: boolean;
 }) {
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       style={({ pressed }) => [
         styles.menuRow,
-        pressed && { backgroundColor: palette.rowPressed },
+        pressed && !disabled && { backgroundColor: palette.rowPressed },
+        disabled && { opacity: 0.45 },
       ]}
     >
       <View style={[styles.menuIconWrap, { backgroundColor: iconBg }]}>
@@ -218,23 +395,6 @@ function MenuRow({
 function ProfileAvatar({ account }: { account: Account }) {
   const hue = avatarHueFromId(account.id);
   const initials = initialsFromName(account.name);
-  const uri = account.avatarUrl;
-  const [failed, setFailed] = useState(!uri);
-
-  useEffect(() => {
-    setFailed(!uri);
-  }, [uri]);
-
-  if (!failed && uri) {
-    return (
-      <Image
-        accessibilityLabel={`${account.name} profile photo`}
-        source={{ uri }}
-        style={styles.profileAvatarImage}
-        onError={() => setFailed(true)}
-      />
-    );
-  }
 
   return (
     <View
@@ -279,11 +439,6 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 15,
-  },
-  profileAvatarImage: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
   },
   profileAvatarFallback: {
     width: 72,
@@ -344,5 +499,53 @@ const styles = StyleSheet.create({
   },
   menuSubtitle: {
     fontSize: 13,
+  },
+  langModalRoot: {
+    flex: 1,
+    justifyContent: "flex-end",
+  },
+  langModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.35)",
+  },
+  langModalSheet: {
+    marginHorizontal: 16,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: "hidden",
+  },
+  langModalTitle: {
+    fontSize: 17,
+    fontWeight: "600",
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 8,
+  },
+  langModalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+  },
+  langModalRowLabel: {
+    fontSize: 17,
+    flex: 1,
+    marginRight: 12,
+  },
+  langModalPending: {
+    paddingVertical: 8,
+    alignItems: "center",
+  },
+  langModalFooter: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  langModalDoneBtn: {
+    paddingVertical: 14,
+    alignItems: "center",
+  },
+  langModalDoneLabel: {
+    fontSize: 17,
+    fontWeight: "600",
   },
 });

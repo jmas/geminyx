@@ -10,4 +10,6 @@ export class Capsule extends Model {
   @field("description") description?: string;
   @field("account_id") accountId!: string;
   @field("capsule_category_id") categoryId?: string;
+  /** When false, capsule is visit-only (hidden from library and thread list). */
+  @field("library_visible") libraryVisible?: boolean;
 }
