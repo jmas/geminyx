@@ -2,11 +2,7 @@
 
 Chat-style browser for the “small web” built on the Gemini protocol.
 
-## Demo
-
-<video autoplay muted loop playsinline width="100%">
-  <source src="https://github.com/jmas/geminyx/raw/refs/heads/main/.github/assets/gemynix-iphone-demo.mp4" type="video/mp4">
-</video>
+[https://github.com/jmas/geminyx/raw/refs/heads/main/.github/assets/gemynix-iphone-demo.mp4](Watch demo)
 
 ## Run locally
 
