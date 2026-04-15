@@ -1,5 +1,5 @@
 import { Q } from "@nozbe/watermelondb";
-import { SEED_CAPSULE_TEMPLATES } from "data/seeds/capsules";
+import { seedCapsuleTemplates } from "data/seeds/capsules";
 import { newId } from "lib/db/utils";
 import type { Capsule } from "lib/models/capsule";
 import {
@@ -253,7 +253,7 @@ export class CapsuleRepository extends BaseRepository {
     const existing = await this.listForAccount(accountId);
     if (existing.length > 0) return;
     const categoryByName = await categoriesRepo.ensureSeedCategories(accountId);
-    for (const t of SEED_CAPSULE_TEMPLATES) {
+    for (const t of seedCapsuleTemplates()) {
       const rawUrl = t.url?.trim();
       const catName = t.categoryName?.trim();
       const categoryId = catName ? categoryByName.get(catName) : undefined;

@@ -194,12 +194,10 @@ export function CapsuleListScreen() {
       return;
     }
     try {
-      const created = await capsulesRepo.insertCapsuleOnly({
-        accountId: activeAccount.id,
-        name: t("capsules.defaultNewCapsuleName"),
-      });
-      router.push(`/capsule/edit/${created.id}` as Href);
-      void queryClient.invalidateQueries({ queryKey: queryKeys.capsules.all });
+      router.push({
+        pathname: "/capsule/create",
+        params: { name: t("capsules.defaultNewCapsuleName") },
+      } as unknown as Href);
     } catch (e) {
       console.error(e);
       Alert.alert(
@@ -207,7 +205,7 @@ export function CapsuleListScreen() {
         t("capsules.addCapsuleError"),
       );
     }
-  }, [activeAccount?.id, queryClient, router, t]);
+  }, [activeAccount?.id, router, t]);
 
   const tint = systemBlueForScheme(scheme);
   const headerTint = headerTitleColorForScheme(scheme);

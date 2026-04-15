@@ -136,57 +136,53 @@ export function CapsuleCreateScreen() {
       }
       try {
         setSavePending(true);
+        const finalName = values.name.trim() || t("capsules.defaultNewCapsuleName");
         const trimmedUrl = values.url.trim();
         const normalized =
           trimmedUrl.length > 0
             ? normalizeGeminiCapsuleRootUrl(trimmedUrl) || trimmedUrl
-            : undefined;
-        if (!normalized?.length) {
-          Alert.alert(
-            t("capsuleCreate.missingUrlTitle"),
-            t("capsuleCreate.missingUrlBody"),
+            : "";
+        if (normalized.length > 0) {
+          const existing = await capsulesRepo.findByGeminiOriginForAccount(
+            activeAccount.id,
+            normalized,
           );
-          return;
-        }
-        const existing = await capsulesRepo.findByGeminiOriginForAccount(
-          activeAccount.id,
-          normalized,
-        );
-        if (existing) {
-          await capsulesRepo.patch(existing.id, {
-            name: values.name.trim(),
-            avatarIcon: values.avatarIcon.trim(),
-            url: normalized,
-            description: values.description.trim(),
-            categoryId: values.categoryId.trim() || null,
-            libraryVisible: true,
-          });
-          await queryClient.invalidateQueries({
-            queryKey: queryKeys.capsules.detail(existing.id),
-          });
-          await queryClient.invalidateQueries({
-            queryKey: queryKeys.capsules.listForActive(),
-          });
-          await queryClient.invalidateQueries({
-            queryKey: queryKeys.threads.all,
-          });
-          router.replace({
-            pathname: "/capsule/edit/[id]",
-            params: { id: existing.id },
-          } as unknown as Href);
-          return;
+          if (existing) {
+            await capsulesRepo.patch(existing.id, {
+              name: finalName,
+              avatarIcon: values.avatarIcon.trim(),
+              url: normalized,
+              description: values.description.trim(),
+              categoryId: values.categoryId.trim() || null,
+              libraryVisible: true,
+            });
+            await queryClient.invalidateQueries({
+              queryKey: queryKeys.capsules.detail(existing.id),
+            });
+            await queryClient.invalidateQueries({
+              queryKey: queryKeys.capsules.listForActive(),
+            });
+            await queryClient.invalidateQueries({
+              queryKey: queryKeys.threads.all,
+            });
+            router.replace({
+              pathname: "/capsule/[id]",
+              params: { id: existing.id },
+            } as unknown as Href);
+            return;
+          }
         }
         const created = await insertMutation.mutateAsync({
           accountId: activeAccount.id,
-          name: values.name.trim(),
+          name: finalName,
           avatarIcon: values.avatarIcon.trim() || undefined,
-          url: normalized,
+          url: normalized || undefined,
           description: values.description.trim() || undefined,
           categoryId: values.categoryId.trim() || undefined,
           libraryVisible: true,
         });
         router.replace({
-          pathname: "/capsule/edit/[id]",
+          pathname: "/capsule/[id]",
           params: { id: created.id },
         } as unknown as Href);
       } catch (e) {
@@ -199,14 +195,6 @@ export function CapsuleCreateScreen() {
     },
     [activeAccount?.id, insertMutation, queryClient, router, t],
   );
-
-  if (!urlParam) {
-    return (
-      <View style={[styles.centered, { backgroundColor: bg }]}>
-        <Text style={{ color: titleColor }}>{t("capsuleCreate.missingUrlParam")}</Text>
-      </View>
-    );
-  }
 
   return (
     <View style={[styles.screen, { backgroundColor: palette.background }]}>

@@ -241,6 +241,14 @@
     "statusConfigured": "A certificate is configured for this account.",
     "statusNotConfigured": "No certificate configured.",
     "importButton": "Import PKCS#12 file…",
+    "exportButton": "Export PKCS#12 file…",
+    "exportDialogTitle": "Export certificate",
+    "exportNoCert": "No certificate configured.",
+    "exportNoCache": "File cache is not available on this device.",
+    "exportNoSharing": "Sharing is not available on this device.",
+    "publicKeyButton": "Copy public key (PEM)",
+    "publicKeyTitle": "Public key",
+    "publicKeyCopied": "Copied to clipboard.",
     "importReadError": "Could not read the selected file.",
     "importSuccessTitle": "Certificate",
     "importSuccessMsg": "PKCS#12 saved. It will be used for Gemini requests from this account.",
@@ -254,6 +262,8 @@
     "removeConfirm": "Remove",
     "removeButton": "Remove certificate",
     "errorImport": "Could not import certificate.",
+    "errorExport": "Could not export certificate.",
+    "errorPublicKey": "Could not generate public key.",
     "errorPassphrase": "Could not save passphrase.",
     "errorRemove": "Could not remove certificate."
   },
@@ -336,5 +346,50 @@
     "clientCertGenerateFail": "Could not generate a client certificate.",
     "shareTitle": "Share certificate with server?",
     "shareMsg": "To access this capsule, Geminyx must present your account’s client certificate during the TLS handshake. Allow this for this thread?"
+  },
+  "seeds": {
+    "categories": {
+      "searchDiscovery": "Search & discovery",
+      "newsMedia": "News & media",
+      "games": "Games",
+      "entertainment": "Entertainment",
+      "educationLearning": "Education & learning",
+      "forumsCommunity": "Forums & community",
+      "technologyDevelopment": "Technology & development",
+      "shoppingCommerce": "Shopping & commerce",
+      "personalBlogs": "Personal & blogs",
+      "artDesign": "Art & design",
+      "toolsUtilities": "Tools & utilities"
+    },
+    "capsules": {
+      "kennedySearch": {
+        "name": "Kennedy Search",
+        "description": "Search through Gemini capsules"
+      },
+      "astrobotany": {
+        "description": "A community gardening experience in geminispace"
+      },
+      "geminiSpaceBbs": {
+        "description": "Discussion forums, microblogging"
+      },
+      "tildeTeam": {
+        "description": "A digital community for socializing, learning, and making cool stuff"
+      },
+      "iich": {
+        "description": "A simple text-based bulletin board modeled after 2ch"
+      },
+      "capcomFeeds": {
+        "description": "A public aggregator of subscribable Gemini pages and Gemini Atom feeds"
+      },
+      "gemiDev": {
+        "description": "Various services for Gemini like Gemipedia or Wayback machine"
+      },
+      "myGeminiSpace": {
+        "description": "A public gemini hosting service that uses a web front-end for content authoring"
+      },
+      "projectGemini": {
+        "description": "Gemini in 100 words"
+      }
+    }
   }
 }

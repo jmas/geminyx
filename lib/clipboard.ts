@@ -20,7 +20,8 @@ export async function setStringAsync(
   if (!native?.setStringAsync) {
     throw new UnavailabilityError("Clipboard", "setStringAsync");
   }
-  return native.setStringAsync(text, options);
+  // Some native implementations fail if `options` is passed as `nil`.
+  return native.setStringAsync(text, options ?? {});
 }
 
 export async function setImageAsync(base64Image: string): Promise<void> {

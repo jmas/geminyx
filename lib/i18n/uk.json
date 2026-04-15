@@ -241,6 +241,14 @@
     "statusConfigured": "Для цього облікового запису налаштовано сертифікат.",
     "statusNotConfigured": "Сертифікат не налаштовано.",
     "importButton": "Імпортувати PKCS#12…",
+    "exportButton": "Експортувати PKCS#12…",
+    "exportDialogTitle": "Експортувати сертифікат",
+    "exportNoCert": "Сертифікат не налаштовано.",
+    "exportNoCache": "Кеш файлів недоступний на цьому пристрої.",
+    "exportNoSharing": "Обмін недоступний на цьому пристрої.",
+    "publicKeyButton": "Копіювати публічний ключ (PEM)",
+    "publicKeyTitle": "Публічний ключ",
+    "publicKeyCopied": "Скопійовано в буфер.",
     "importReadError": "Не вдалося прочитати вибраний файл.",
     "importSuccessTitle": "Сертифікат",
     "importSuccessMsg": "PKCS#12 збережено. Його буде використано для запитів Gemini з цього облікового запису.",
@@ -254,6 +262,8 @@
     "removeConfirm": "Прибрати",
     "removeButton": "Прибрати сертифікат",
     "errorImport": "Не вдалося імпортувати сертифікат.",
+    "errorExport": "Не вдалося експортувати сертифікат.",
+    "errorPublicKey": "Не вдалося створити публічний ключ.",
     "errorPassphrase": "Не вдалося зберегти парольну фразу.",
     "errorRemove": "Не вдалося прибрати сертифікат."
   },
@@ -336,5 +346,50 @@
     "clientCertGenerateFail": "Не вдалося створити клієнтський сертифікат.",
     "shareTitle": "Поділитися сертифікатом із сервером?",
     "shareMsg": "Щоб отримати доступ до цієї капсули, Geminyx має надіслати клієнтський сертифікат вашого облікового запису під час TLS-рукостискання. Дозволити для цього треду?"
+  },
+  "seeds": {
+    "categories": {
+      "searchDiscovery": "Пошук і відкриття",
+      "newsMedia": "Новини й медіа",
+      "games": "Ігри",
+      "entertainment": "Розваги",
+      "educationLearning": "Освіта й навчання",
+      "forumsCommunity": "Форуми й спільнота",
+      "technologyDevelopment": "Технології й розробка",
+      "shoppingCommerce": "Покупки й комерція",
+      "personalBlogs": "Особисте й блоги",
+      "artDesign": "Мистецтво й дизайн",
+      "toolsUtilities": "Інструменти й утиліти"
+    },
+    "capsules": {
+      "kennedySearch": {
+        "name": "Kennedy Search",
+        "description": "Пошук по Gemini-капсулах"
+      },
+      "astrobotany": {
+        "description": "Спільнотний досвід садівництва у geminispace"
+      },
+      "geminiSpaceBbs": {
+        "description": "Форуми для обговорень, мікроблогінг"
+      },
+      "tildeTeam": {
+        "description": "Цифрова спільнота для спілкування, навчання та створення класних речей"
+      },
+      "iich": {
+        "description": "Проста текстова дошка оголошень, натхненна 2ch"
+      },
+      "capcomFeeds": {
+        "description": "Публічний агрегатор сторінок Gemini і Atom-стрічок для підписки"
+      },
+      "gemiDev": {
+        "description": "Різні сервіси для Gemini на кшталт Gemipedia або Wayback machine"
+      },
+      "myGeminiSpace": {
+        "description": "Публічний хостинг Gemini з веб-інтерфейсом для створення контенту"
+      },
+      "projectGemini": {
+        "description": "Gemini у 100 словах"
+      }
+    }
   }
 }

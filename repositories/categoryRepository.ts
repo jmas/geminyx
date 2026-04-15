@@ -1,5 +1,5 @@
 import { Q } from "@nozbe/watermelondb";
-import { SEED_CAPSULE_CATEGORIES } from "data/seeds/capsules";
+import { seedCapsuleCategories } from "data/seeds/capsules";
 import { newId } from "lib/db/utils";
 import type { Category } from "lib/models/category";
 import { Capsule as CapsuleModel } from "lib/watermelon/models/Capsule";
@@ -146,8 +146,9 @@ export class CategoryRepository extends BaseRepository {
 
     if (existing.length === 0) {
       const db = this.db();
+      const seedCategories = seedCapsuleCategories();
       await db.write(async () => {
-        for (const def of SEED_CAPSULE_CATEGORIES) {
+        for (const def of seedCategories) {
           const id = newId("ccat");
           await this.categories().create((rec) => {
             rec._raw.id = id;
@@ -161,7 +162,7 @@ export class CategoryRepository extends BaseRepository {
       return byName;
     }
 
-    for (const def of SEED_CAPSULE_CATEGORIES) {
+    for (const def of seedCapsuleCategories()) {
       if (byName.has(def.name)) continue;
       const created = await this.create(aid, def.name);
       byName.set(created.name, created.id);

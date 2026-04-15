@@ -1,6 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query";
 import * as DocumentPicker from "expo-document-picker";
-import { readAsStringAsync } from "expo-file-system/legacy";
+import {
+  cacheDirectory,
+  EncodingType,
+  readAsStringAsync,
+  writeAsStringAsync,
+} from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -16,6 +22,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAccountActive } from "hooks/account/useAccountActive";
+import { setStringAsync } from "lib/clipboard";
+import { extractPublicKeyPemFromPkcs12Base64 } from "lib/account/extractPublicKeyPemFromPkcs12Base64";
 import { queryKeys } from "lib/queryKeys";
 import { certificateScreenPaletteForScheme } from "lib/theme/semanticUi";
 import { accountsRepo } from "repositories";
@@ -87,6 +95,69 @@ export function AccountCertificateScreen() {
       alertError(e, t("certificateScreen.errorImport"), t("stack.certificate"));
     }
   }, [activeAccount, queryClient, t]);
+
+  const handleExportPkcs12 = useCallback(async () => {
+    if (!activeAccount) return;
+    const base64 = activeAccount.geminiClientP12Base64;
+    if (!base64) {
+      Alert.alert(t("stack.certificate"), t("certificateScreen.exportNoCert"));
+      return;
+    }
+    try {
+      const base = cacheDirectory;
+      if (!base) {
+        alertError(null, t("certificateScreen.exportNoCache"), t("stack.certificate"));
+        return;
+      }
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const path = `${base}geminyx-client-cert-${stamp}.p12`;
+      setBusy(true);
+      try {
+        await writeAsStringAsync(path, base64, { encoding: EncodingType.Base64 });
+      } finally {
+        setBusy(false);
+      }
+      const canShare = await Sharing.isAvailableAsync();
+      if (!canShare) {
+        alertError(null, t("certificateScreen.exportNoSharing"), t("stack.certificate"));
+        return;
+      }
+      await Sharing.shareAsync(path, {
+        mimeType: "application/x-pkcs12",
+        UTI: "com.rsa.pkcs-12",
+        dialogTitle: t("certificateScreen.exportDialogTitle"),
+      });
+    } catch (e) {
+      console.error("handleExportPkcs12", e);
+      alertError(e, t("certificateScreen.errorExport"), t("stack.certificate"));
+    }
+  }, [activeAccount, t]);
+
+  const handleCopyPublicKey = useCallback(async () => {
+    if (!activeAccount) return;
+    const base64 = activeAccount.geminiClientP12Base64;
+    if (!base64) {
+      Alert.alert(t("stack.certificate"), t("certificateScreen.exportNoCert"));
+      return;
+    }
+    try {
+      setBusy(true);
+      const pem = extractPublicKeyPemFromPkcs12Base64({
+        pkcs12Base64: base64,
+        passphrase: activeAccount.geminiClientP12Passphrase ?? "",
+      });
+      await setStringAsync(pem);
+      Alert.alert(
+        t("certificateScreen.publicKeyTitle"),
+        t("certificateScreen.publicKeyCopied"),
+      );
+    } catch (e) {
+      console.error("handleCopyPublicKey", e);
+      alertError(e, t("certificateScreen.errorPublicKey"), t("stack.certificate"));
+    } finally {
+      setBusy(false);
+    }
+  }, [activeAccount, t]);
 
   const handleSavePassphrase = useCallback(async () => {
     if (!activeAccount) return;
@@ -196,6 +267,52 @@ export function AccountCertificateScreen() {
               </Text>
             )}
           </Pressable>
+
+          {activeAccount?.geminiClientP12Base64 ? (
+            <Pressable
+              onPress={handleExportPkcs12}
+              disabled={profileLoading || !activeAccount || busy}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                {
+                  borderColor: palette.fieldBorder,
+                  opacity: profileLoading || !activeAccount || busy ? 0.5 : 1,
+                },
+                pressed && { backgroundColor: palette.rowPressed },
+              ]}
+            >
+              {busy ? (
+                <ActivityIndicator />
+              ) : (
+                <Text style={[styles.secondaryLabel, { color: palette.textPrimary }]}>
+                  {t("certificateScreen.exportButton")}
+                </Text>
+              )}
+            </Pressable>
+          ) : null}
+
+          {activeAccount?.geminiClientP12Base64 ? (
+            <Pressable
+              onPress={handleCopyPublicKey}
+              disabled={profileLoading || !activeAccount || busy}
+              style={({ pressed }) => [
+                styles.secondaryButton,
+                {
+                  borderColor: palette.fieldBorder,
+                  opacity: profileLoading || !activeAccount || busy ? 0.5 : 1,
+                },
+                pressed && { backgroundColor: palette.rowPressed },
+              ]}
+            >
+              {busy ? (
+                <ActivityIndicator />
+              ) : (
+                <Text style={[styles.secondaryLabel, { color: palette.textPrimary }]}>
+                  {t("certificateScreen.publicKeyButton")}
+                </Text>
+              )}
+            </Pressable>
+          ) : null}
         </View>
 
         <View style={[styles.card, { backgroundColor: palette.fieldBg }]}>
