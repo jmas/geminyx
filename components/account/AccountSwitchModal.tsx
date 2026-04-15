@@ -106,7 +106,7 @@ export function AccountSwitchModal({ visible, onClose }: AccountSwitchModalProps
           <View style={[styles.grabber, { backgroundColor: sheet.sheetHandle }]} />
         </View>
         <Text style={[styles.title, { color: sheet.sheetTitle }]} accessibilityRole="header">
-          Accounts
+          {t("onboarding.accountsTitle")}
         </Text>
 
         {loading ? (
@@ -170,7 +170,7 @@ export function AccountSwitchModal({ visible, onClose }: AccountSwitchModalProps
               >
                 <Ionicons name="add-circle-outline" size={22} color={blue} />
                 <Text style={[styles.createLabel, { color: blue }]}>
-                  Create new account
+                  {t("settings.createNewAccount")}
                 </Text>
               </Pressable>
             }

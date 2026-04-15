@@ -2,7 +2,7 @@ import { HeaderButton } from "@react-navigation/elements";
 import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
-import { router, type Href } from "expo-router";
+import { useRouter, type Href } from "expo-router";
 import {
   useCallback,
   useLayoutEffect,
@@ -27,7 +27,6 @@ import { usePopupManager } from "react-popup-manager";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
 import { CategoryManageModal } from "components/capsule/CategoryManageModal";
-import { CapsuleFormModal } from "components/capsule/CapsuleFormModal";
 import {
   selectCapsuleUiPalette,
   type CapsuleListRowPalette,
@@ -48,6 +47,7 @@ const LONG_PRESS_MS = 450;
 
 export function CapsuleListScreen() {
   const { t } = useTranslation();
+  const router = useRouter();
   const navigation = useNavigation();
   const scheme = useColorScheme();
   const palette = selectCapsuleUiPalette(scheme);
@@ -185,22 +185,29 @@ export function CapsuleListScreen() {
     await response;
   }, [popupManager, activeAccount?.id, t]);
 
-  const openAddCapsuleSheet = useCallback(async () => {
-    const { response } = popupManager.open(CapsuleFormModal);
-    const closeResult = await response;
-    if (
-      closeResult &&
-      typeof closeResult === "object" &&
-      "created" in closeResult &&
-      closeResult.created
-    ) {
-      const c = closeResult.created;
-      router.push({
-        pathname: "/capsule/edit/[id]",
-        params: { id: c.id },
-      } as unknown as Href);
+  const onAddCapsulePress = useCallback(async () => {
+    if (!activeAccount?.id) {
+      Alert.alert(
+        t("capsules.noAccountTitle"),
+        t("capsules.addNoAccountBody"),
+      );
+      return;
     }
-  }, [popupManager]);
+    try {
+      const created = await capsulesRepo.insertCapsuleOnly({
+        accountId: activeAccount.id,
+        name: t("capsules.defaultNewCapsuleName"),
+      });
+      router.push(`/capsule/edit/${created.id}` as Href);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.capsules.all });
+    } catch (e) {
+      console.error(e);
+      Alert.alert(
+        t("capsules.addCapsuleErrorTitle"),
+        t("capsules.addCapsuleError"),
+      );
+    }
+  }, [activeAccount?.id, queryClient, router, t]);
 
   const tint = systemBlueForScheme(scheme);
   const headerTint = headerTitleColorForScheme(scheme);
@@ -273,7 +280,7 @@ export function CapsuleListScreen() {
           </HeaderButton>
         ) : (
           <HeaderButton
-            onPress={() => void openAddCapsuleSheet()}
+            onPress={() => void onAddCapsulePress()}
             accessibilityLabel={t("capsules.a11yAddCapsule")}
           >
             <Ionicons
@@ -295,7 +302,7 @@ export function CapsuleListScreen() {
     exitSelectMode,
     headerTint,
     navigation,
-    openAddCapsuleSheet,
+    onAddCapsulePress,
     openCategoryManageModal,
     selecting,
     selectedIds,

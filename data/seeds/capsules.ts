@@ -59,6 +59,13 @@ export const SEED_CAPSULE_TEMPLATES: SeedCapsuleTemplate[] = [
     categoryName: "Forums & community",
   },
   {
+    name: "IIch",
+    avatarIcon: "♊",
+    url: "gemini://iich.space",
+    description: "A simple text-based bulletin board modeled after 2ch",
+    categoryName: "Forums & community",
+  },
+  {
     name: "CAPCOM Feeds",
     avatarIcon: "📰",
     url: "gemini://gemini.circumlunar.space/capcom/",
@@ -73,6 +80,13 @@ export const SEED_CAPSULE_TEMPLATES: SeedCapsuleTemplate[] = [
     description:
       "Various services for Gemini like Gemipedia or Wayback machine",
     categoryName: "Tools & utilities",
+  },
+  {
+    name: "Project Gemini",
+    avatarIcon: "ℹ️",
+    url: "gemini://geminiprotocol.net",
+    description: "Gemini in 100 words",
+    categoryName: "Education & learning",
   },
 ];
 

@@ -14,6 +14,8 @@ export const queryKeys = {
     listForActive: () => [...queryKeys.capsules.all, "list-for-active"] as const,
     detail: (capsuleId: string) =>
       [...queryKeys.capsules.all, "detail", capsuleId] as const,
+    blobMedia: (capsuleId: string) =>
+      [...queryKeys.capsules.all, "blob-media", capsuleId] as const,
   },
   categories: {
     all: ["categories"] as const,

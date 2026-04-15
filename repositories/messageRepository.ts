@@ -134,6 +134,24 @@ export class MessageRepository extends BaseRepository {
     return this.messagesWithBlobMeta(ordered);
   }
 
+  /**
+   * Messages that reference a `blobs` row, newest first (by `sent_at`, then `id`).
+   * Thread id matches capsule id for capsule conversations.
+   */
+  async listBlobMessagesForThreadDesc(
+    threadId: string,
+  ): Promise<ThreadMessage[]> {
+    const rows = await this.messages()
+      .query(
+        Q.where("thread_id", threadId),
+        Q.where("blob_id", Q.notEq(null)),
+        Q.sortBy("sent_at", "desc"),
+        Q.sortBy("id", "desc"),
+      )
+      .fetch();
+    return this.messagesWithBlobMeta(rows);
+  }
+
   async listBeforeCursorForThread(
     threadId: string,
     cursor: { sentAt: string; id: string },

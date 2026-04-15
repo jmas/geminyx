@@ -82,7 +82,9 @@
     "modalAddTitle": "Нова капсула",
     "addNoAccountBody": "Оберіть обліковий запис перед додаванням капсули.",
     "addCapsuleError": "Не вдалося додати капсулу.",
-    "addCapsuleErrorTitle": "Додавання капсули"
+    "addCapsuleErrorTitle": "Додавання капсули",
+    "defaultNewCapsuleName": "Нова капсула",
+    "mediaSectionTitle": "Файли в цьому треді"
   },
   "capsuleCreate": {
     "missingUrlTitle": "Немає URL",
@@ -317,6 +319,7 @@
     "noEmail": "Немає електронної пошти для цього запису",
     "switchAccount": "Змінити обліковий запис",
     "switchAccountSubtitle": "Оберіть інший профіль або додайте новий",
+    "createNewAccount": "Створити новий обліковий запис",
     "certConfigured": "Налаштовано",
     "certNotConfigured": "Не налаштовано",
     "developerTools": "Інструменти розробника",

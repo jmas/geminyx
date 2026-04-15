@@ -82,7 +82,9 @@
     "modalAddTitle": "Add Capsule",
     "addNoAccountBody": "Select an account before adding a capsule.",
     "addCapsuleError": "Could not add capsule.",
-    "addCapsuleErrorTitle": "Adding capsule"
+    "addCapsuleErrorTitle": "Adding capsule",
+    "defaultNewCapsuleName": "New capsule",
+    "mediaSectionTitle": "Files in this thread"
   },
   "capsuleCreate": {
     "missingUrlTitle": "Missing URL",
@@ -317,6 +319,7 @@
     "noEmail": "No email on this account",
     "switchAccount": "Switch account",
     "switchAccountSubtitle": "Choose another profile or add one",
+    "createNewAccount": "Create new account",
     "certConfigured": "Configured",
     "certNotConfigured": "Not configured",
     "developerTools": "Developer tools",

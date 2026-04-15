@@ -16,20 +16,34 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { usePopupManager } from "react-popup-manager";
 import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
 import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
+import { BlobViewModal } from "components/message/BlobViewModal";
+import { MessageAttachmentBubble } from "components/message/MessageAttachmentBubble";
 import { useAccountActive } from "hooks/account/useAccountActive";
+import type { ThreadMessage } from "lib/models/threadMessage";
 import { queryKeys } from "lib/queryKeys";
 import {
   headerTitleColorForScheme,
   rootScreenBackgroundForScheme,
   systemBlueForScheme,
 } from "lib/theme/appColors";
-import { capsulesRepo } from "repositories";
+import { threadConversationPaletteForScheme } from "lib/theme/semanticUi";
+import { capsulesRepo, messagesRepo } from "repositories";
 import { alertError } from "utils/error";
+import { formatLastMessageDate } from "utils/formatLastMessageDate";
 import { firstParam } from "utils/searchParams";
 
 const CAPSULE_VIEW_EDIT_ICON_SIZE = 24;
+
+const BLOB_REF_BODY = /^\[blob: ([^\]]+)\]$/;
+
+function blobPointerReady(message: ThreadMessage): boolean {
+  const bodyTrim = message.body?.trim() ?? "";
+  const m = BLOB_REF_BODY.exec(bodyTrim);
+  return Boolean(message.blobId && m && m[1] === message.blobId);
+}
 
 export function CapsuleViewScreen() {
   const { t } = useTranslation();
@@ -38,6 +52,11 @@ export function CapsuleViewScreen() {
   const insets = useSafeAreaInsets();
   const scheme = useColorScheme();
   const palette = selectCapsuleUiPalette(scheme);
+  const threadPalette = useMemo(
+    () => threadConversationPaletteForScheme(scheme),
+    [scheme],
+  );
+  const popupManager = usePopupManager();
   const bg = rootScreenBackgroundForScheme(scheme);
   const tint = systemBlueForScheme(scheme);
   const titleColor = headerTitleColorForScheme(scheme);
@@ -66,10 +85,37 @@ export function CapsuleViewScreen() {
     enabled: Boolean(capsuleId) && !activePending,
   });
 
+  const {
+    data: blobMessages = [],
+    refetch: refetchBlobMedia,
+    isPending: blobMediaPending,
+  } = useQuery({
+    queryKey: [
+      ...queryKeys.capsules.blobMedia(capsuleId),
+      activeAccount?.id ?? "none",
+    ],
+    queryFn: async () => {
+      if (!activeAccount?.id || !capsuleId) return [];
+      return messagesRepo.listBlobMessagesForThreadDesc(capsuleId);
+    },
+    enabled: Boolean(capsuleId) && !activePending && Boolean(activeAccount?.id),
+  });
+
+  const openBlobModal = useCallback(
+    (message: ThreadMessage) => {
+      const id = message.blobId?.trim();
+      if (!id) return;
+      popupManager.open(BlobViewModal, { blobId: id });
+    },
+    [popupManager],
+  );
+
   useFocusEffect(
     useCallback(() => {
-      if (capsuleId) void refetchCapsule();
-    }, [capsuleId, refetchCapsule]),
+      if (!capsuleId) return;
+      void refetchCapsule();
+      void refetchBlobMedia();
+    }, [capsuleId, refetchCapsule, refetchBlobMedia]),
   );
 
   const notFound = !loading && !capsule;
@@ -131,13 +177,13 @@ export function CapsuleViewScreen() {
       try {
         setAddToLibraryPending(true);
         await capsulesRepo.patch(capsule.id, { libraryVisible: true });
-        await queryClient.invalidateQueries({
+        void queryClient.invalidateQueries({
           queryKey: queryKeys.capsules.all,
         });
-        await queryClient.invalidateQueries({
+        void queryClient.invalidateQueries({
           queryKey: queryKeys.threads.all,
         });
-        await refetchCapsule();
+        router.push(`/capsule/edit/${capsule.id}` as Href);
       } catch (e) {
         console.error(e);
         alertError(
@@ -149,7 +195,7 @@ export function CapsuleViewScreen() {
         setAddToLibraryPending(false);
       }
     })();
-  }, [capsule, queryClient, refetchCapsule, t]);
+  }, [capsule, queryClient, router, t]);
 
   const description = useMemo(
     () => capsule?.description?.trim() ?? "",
@@ -254,6 +300,67 @@ export function CapsuleViewScreen() {
           )}
         </Pressable>
       ) : null}
+
+      {!blobMediaPending && blobMessages.length > 0 ? (
+        <View
+          style={[
+            styles.mediaFullBleed,
+            { backgroundColor: palette.listRowSurface },
+          ]}
+        >
+          <Text
+            style={[styles.mediaSectionTitle, { color: titleColor }]}
+            accessibilityRole="header"
+          >
+            {t("capsules.mediaSectionTitle")}
+          </Text>
+          {blobMessages.map((message, index) => {
+            const outgoing = message.isOutgoing;
+            const textColor = outgoing
+              ? threadPalette.textOutgoing
+              : threadPalette.textIncoming;
+            const mutedColor = outgoing
+              ? threadPalette.timeOutgoing
+              : threadPalette.timeIncoming;
+            const pointerOk = blobPointerReady(message);
+            const blobByteLen =
+              message.blobContentLength ?? message.contentLength;
+            return (
+              <View key={message.id}>
+                {index > 0 ? (
+                  <View
+                    style={[
+                      styles.mediaSeparator,
+                      { backgroundColor: palette.separator },
+                    ]}
+                  />
+                ) : null}
+                <View style={styles.mediaRow}>
+                  <Text
+                    style={[styles.mediaDate, { color: palette.textSecondary }]}
+                  >
+                    {formatLastMessageDate(message.sentAt)}
+                  </Text>
+                  <MessageAttachmentBubble
+                    mimeType={message.blobMimeType}
+                    byteLength={blobByteLen}
+                    fileName={message.blobFileName}
+                    outgoing={outgoing}
+                    textColor={textColor}
+                    mutedColor={mutedColor}
+                    pending={!pointerOk}
+                    onPress={
+                      pointerOk
+                        ? () => openBlobModal(message)
+                        : undefined
+                    }
+                  />
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
@@ -314,5 +421,33 @@ const styles = StyleSheet.create({
   editBtnLabel: {
     fontSize: 17,
     fontWeight: "600",
+  },
+  mediaFullBleed: {
+    marginHorizontal: -24,
+    marginTop: 24,
+    alignSelf: "stretch",
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  mediaSectionTitle: {
+    fontSize: 13,
+    fontWeight: "600",
+    letterSpacing: 0.2,
+    textTransform: "uppercase",
+    paddingHorizontal: 24,
+    marginBottom: 12,
+  },
+  mediaSeparator: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: 24,
+  },
+  mediaRow: {
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+  },
+  mediaDate: {
+    fontSize: 13,
+    marginBottom: 8,
+    fontVariant: ["tabular-nums"],
   },
 });
