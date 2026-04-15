@@ -34,8 +34,8 @@ import {
   type IncomingGemtextChrome,
 } from "components/message/GemtextMessageBody";
 import { geminiDocumentBaseUrlForMessage } from "lib/models/gemini";
+import { useDateFormatter } from "hooks/useDateFormatter";
 import { formatByteCount } from "utils/formatBytes";
-import { formatMessageTime } from "utils/formatMessageTime";
 import {
   prepareTruncatedGemtextPreview,
   truncateMessageToLines,
@@ -198,6 +198,7 @@ function MessageBubble({
   ) => { title: string; systemIcon: string };
 }) {
   const { t } = useTranslation();
+  const dateFmt = useDateFormatter();
   const outgoing = message.isOutgoing;
   const isError =
     !outgoing && message.status !== undefined && message.status >= 40;
@@ -292,7 +293,7 @@ function MessageBubble({
         </Text>
       ) : null}
       <Text selectable style={[styles.timeText, { color: timeColor }]}>
-        {formatMessageTime(message.sentAt)}
+        {dateFmt.formatMessageTime(message.sentAt)}
       </Text>
     </View>
   );

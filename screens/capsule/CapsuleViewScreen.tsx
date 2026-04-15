@@ -22,6 +22,7 @@ import { selectCapsuleUiPalette } from "components/capsule/capsuleUiPalette";
 import { BlobViewModal } from "components/message/BlobViewModal";
 import { MessageAttachmentBubble } from "components/message/MessageAttachmentBubble";
 import { useAccountActive } from "hooks/account/useAccountActive";
+import { useDateFormatter } from "hooks/useDateFormatter";
 import type { ThreadMessage } from "lib/models/threadMessage";
 import { queryKeys } from "lib/queryKeys";
 import {
@@ -32,7 +33,6 @@ import {
 import { threadConversationPaletteForScheme } from "lib/theme/semanticUi";
 import { capsulesRepo, messagesRepo } from "repositories";
 import { alertError } from "utils/error";
-import { formatLastMessageDate } from "utils/formatLastMessageDate";
 import { firstParam } from "utils/searchParams";
 
 const CAPSULE_VIEW_EDIT_ICON_SIZE = 24;
@@ -47,6 +47,7 @@ function blobPointerReady(message: ThreadMessage): boolean {
 
 export function CapsuleViewScreen() {
   const { t } = useTranslation();
+  const dateFmt = useDateFormatter();
   const navigation = useNavigation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -339,7 +340,7 @@ export function CapsuleViewScreen() {
                   <Text
                     style={[styles.mediaDate, { color: palette.textSecondary }]}
                   >
-                    {formatLastMessageDate(message.sentAt)}
+                    {dateFmt.formatLastMessageDate(message.sentAt)}
                   </Text>
                   <MessageAttachmentBubble
                     mimeType={message.blobMimeType}

@@ -28,6 +28,7 @@ import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
 import { ThreadStartModal } from "components/thread/ThreadStartModal";
 import { SwipeToDeleteRow } from "components/ui/SwipeToDeleteRow";
 import { useAccountActive } from "hooks/account/useAccountActive";
+import { useDateFormatter } from "hooks/useDateFormatter";
 import type { Thread } from "lib/models/thread";
 import { queryKeys } from "lib/queryKeys";
 import {
@@ -38,7 +39,6 @@ import {
 import { threadListPaletteForScheme } from "lib/theme/semanticUi";
 import type { TFunction } from "i18next";
 import { threadsRepo } from "repositories";
-import { formatLastMessageDate } from "utils/formatLastMessageDate";
 import { usePopupManager } from "react-popup-manager";
 
 const LONG_PRESS_MS = 450;
@@ -47,6 +47,7 @@ type ListPalette = ReturnType<typeof threadListPaletteForScheme>;
 
 export function ThreadListScreen() {
   const { t } = useTranslation();
+  const dateFmt = useDateFormatter();
   const navigation = useNavigation();
   const popupManager = usePopupManager();
   const scheme = useColorScheme();
@@ -311,6 +312,7 @@ export function ThreadListScreen() {
               selecting={selecting}
               selected={selectedIds.includes(item.id)}
               tint={tint}
+              dateFmt={dateFmt}
               onPress={() => {
                 if (selecting) {
                   toggleSelected(item.id);
@@ -394,6 +396,7 @@ function ThreadRow({
   tint,
   onPress,
   onLongPress,
+  dateFmt,
 }: {
   thread: Thread;
   palette: ListPalette;
@@ -402,9 +405,10 @@ function ThreadRow({
   tint: ColorValue;
   onPress: () => void;
   onLongPress?: () => void;
+  dateFmt: ReturnType<typeof useDateFormatter>;
 }) {
   const { capsule } = thread;
-  const subtitle = formatLastMessageDate(thread.lastMessageAt);
+  const subtitle = dateFmt.formatLastMessageDate(thread.lastMessageAt);
 
   return (
     <Pressable

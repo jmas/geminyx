@@ -21,6 +21,7 @@ import * as yup from "yup";
 import { useTranslation } from "react-i18next";
 import { rnEmojiKeyboardTheme } from "components/capsule/capsuleEmojiKeyboardTheme";
 import { useKeyboardHeight } from "hooks/useKeyboardHeight";
+import { useCurrentLang } from "hooks/useCurrentLang";
 import { emojiKeyboardTranslation } from "lib/i18n";
 import { suggestedCapsuleNameFromGeminiUrl } from "lib/models/gemini";
 import { modalBackdropScrim } from "lib/theme/semanticUi";
@@ -126,6 +127,7 @@ export function CapsuleForm({
   onSubmit,
 }: CapsuleFormProps) {
   const { t } = useTranslation();
+  const lang = useCurrentLang();
   const resolvedSubmitLabel = submitLabel ?? t("common.add");
   const validationSchema = useMemo(
     () => buildCapsuleFormValidationSchema(t),
@@ -516,7 +518,7 @@ export function CapsuleForm({
                 void setFieldValue("avatarIcon", emoji.emoji);
               }}
               theme={rnEmojiKeyboardTheme(scheme)}
-              translation={emojiKeyboardTranslation()}
+              translation={emojiKeyboardTranslation(lang)}
               enableSearchBar
               enableRecentlyUsed
               categoryPosition="floating"
