@@ -1,4 +1,5 @@
 import { Alert } from "react-native";
+import { i18n } from "lib/i18n";
 
 /**
  * Validates user-entered Gemini URL for opening a thread. Shows alerts on failure.
@@ -9,11 +10,11 @@ export function geminiUrlForThreadNavigationOrAlert(
 ): string | null {
   const trimmed = (raw ?? "").trim();
   if (!trimmed.length) {
-    Alert.alert("URL required", "Enter a gemini:// URL.");
+    Alert.alert(i18n.t("threads.urlRequiredTitle"), i18n.t("threads.urlRequiredBody"));
     return null;
   }
   if (!/^gemini:\/\//i.test(trimmed)) {
-    Alert.alert("Invalid URL", "The URL must start with gemini://.");
+    Alert.alert(i18n.t("threads.urlInvalidTitle"), i18n.t("threads.urlInvalidBodyPrefix"));
     return null;
   }
   try {
@@ -22,7 +23,7 @@ export function geminiUrlForThreadNavigationOrAlert(
       throw new Error("not gemini protocol");
     }
   } catch {
-    Alert.alert("Invalid URL", "Could not parse this URL. Check the format.");
+    Alert.alert(i18n.t("threads.urlInvalidTitle"), i18n.t("threads.urlInvalidBodyParse"));
     return null;
   }
   return trimmed;

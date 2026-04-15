@@ -25,11 +25,11 @@ import {
   geminiOriginsMatch,
   geminiPathnameForVisitButton,
   isCapsuleRootRequestPath,
+  normalizeGeminiCapsuleRootUrl,
   suggestedCapsuleNameFromGeminiUrl,
   truncateForVisitButtonLabel,
 } from "lib/models/gemini";
 import { queryKeys } from "lib/queryKeys";
-import { MESSAGES_PAGE_SIZE } from "repositories";
 import { destructiveTintColor, headerTitleColorForScheme } from "lib/theme/appColors";
 import { threadConversationPaletteForScheme } from "lib/theme/semanticUi";
 import {
@@ -54,7 +54,13 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { accountsRepo, capsulesRepo, threadsRepo, messagesRepo } from "repositories";
+import {
+  accountsRepo,
+  capsulesRepo,
+  messagesRepo,
+  MESSAGES_PAGE_SIZE,
+  threadsRepo,
+} from "repositories";
 import { alertError, formatError } from "utils/error";
 import { firstParam } from "utils/searchParams";
 import { logThreadMessage } from "utils/threadMessageLog";
@@ -233,24 +239,34 @@ export function ThreadViewScreen() {
   }, [activeAccount]);
 
   const capsuleUrl = useMemo(() => {
-    const fromParam = urlParam?.trim() ?? "";
-    if (fromParam.length > 0) return fromParam;
     const fromThread = threadRow?.capsule?.url?.trim() ?? "";
     if (fromThread.length > 0) return fromThread;
     const fromCapsule = capsuleRow?.url?.trim() ?? "";
     if (fromCapsule.length > 0) return fromCapsule;
+    const fromParam = urlParam?.trim() ?? "";
+    if (fromParam.length > 0) {
+      return normalizeGeminiCapsuleRootUrl(fromParam) || fromParam;
+    }
     return "";
   }, [threadRow?.capsule?.url, capsuleRow?.url, urlParam]);
 
+  const [visitTargetFromQuery, setVisitTargetFromQuery] = useState(() =>
+    (urlParam?.trim() ?? "").trim(),
+  );
+
+  useEffect(() => {
+    setVisitTargetFromQuery((urlParam?.trim() ?? "").trim());
+  }, [urlParam]);
+
   const visitFooterPrimaryLabel = useMemo(() => {
-    const raw = urlParam?.trim();
+    const raw = visitTargetFromQuery;
     if (!raw) return t("thread.visit");
     const path = geminiPathnameForVisitButton(raw);
     if (!path) return t("thread.visit");
     return t("thread.visitWithPath", {
       path: truncateForVisitButtonLabel(path),
     });
-  }, [urlParam, t]);
+  }, [visitTargetFromQuery, t]);
 
   const scheduleScrollToEnd = useCallback(() => {
     requestAnimationFrame(() =>
@@ -400,6 +416,9 @@ export function ThreadViewScreen() {
               params: {
                 id: existing.id,
                 name: existing.name,
+                // Preserve full URL (path/query/hash) for the initial Visit.
+                // Capsule identity still comes from origin matching in the repo lookup.
+                url: target,
               },
             } as unknown as Href);
             return;
@@ -616,9 +635,9 @@ export function ThreadViewScreen() {
   }, [lastMessage, capsuleUrl]);
 
   const visitHomeFooterLabel = useMemo(() => {
-    if (urlParam?.trim()) return visitFooterPrimaryLabel;
+    if (visitTargetFromQuery) return visitFooterPrimaryLabel;
     return requestHomeAsRefresh ? t("thread.revisitHome") : t("thread.visitHome");
-  }, [urlParam, visitFooterPrimaryLabel, requestHomeAsRefresh, t]);
+  }, [visitTargetFromQuery, visitFooterPrimaryLabel, requestHomeAsRefresh, t]);
 
   const lastExpectsInput =
     lastMessage != null &&
@@ -685,10 +704,14 @@ export function ThreadViewScreen() {
                 hasCapsuleUrl: Boolean(capsuleUrl),
                 flowPending,
               });
-              void submitMessageFlow("", {
-                requestText: "",
-                displayText: visitFooterPrimaryLabel,
-              });
+              void (async () => {
+                await submitMessageFlow("", {
+                  ...(visitTargetFromQuery ? { fetchUrl: visitTargetFromQuery } : {}),
+                  requestText: "",
+                  displayText: visitFooterPrimaryLabel,
+                });
+                if (visitTargetFromQuery) setVisitTargetFromQuery("");
+              })();
             }}
             style={({ pressed }) => [
               styles.startButton,
@@ -732,11 +755,15 @@ export function ThreadViewScreen() {
                 flowPending,
                 asRefresh: requestHomeAsRefresh,
               });
-              void submitMessageFlow("", {
-                fromHome: true,
-                requestText: "",
-                displayText: visitHomeFooterLabel,
-              });
+              void (async () => {
+                await submitMessageFlow("", {
+                  ...(visitTargetFromQuery ? { fetchUrl: visitTargetFromQuery } : {}),
+                  fromHome: true,
+                  requestText: "",
+                  displayText: visitHomeFooterLabel,
+                });
+                if (visitTargetFromQuery) setVisitTargetFromQuery("");
+              })();
             }}
             style={({ pressed }) => [
               styles.homeButton,
@@ -790,11 +817,15 @@ export function ThreadViewScreen() {
               hasCapsuleUrl: Boolean(capsuleUrl),
               asRefresh: requestHomeAsRefresh,
             });
-            void submitMessageFlow("", {
-              fromHome: true,
-              requestText: "",
-              displayText: visitHomeFooterLabel,
-            });
+            void (async () => {
+              await submitMessageFlow("", {
+                ...(visitTargetFromQuery ? { fetchUrl: visitTargetFromQuery } : {}),
+                fromHome: true,
+                requestText: "",
+                displayText: visitHomeFooterLabel,
+              });
+              if (visitTargetFromQuery) setVisitTargetFromQuery("");
+            })();
           }}
           requestHomeAsRefresh={requestHomeAsRefresh}
         />

@@ -13,14 +13,11 @@ import {
 import {
   Alert,
   FlatList,
-  KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   RefreshControl,
   StyleSheet,
   Text,
-  TextInput,
   useColorScheme,
   View,
   type ColorValue,
@@ -28,6 +25,7 @@ import {
 import { useTranslation } from "react-i18next";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
+import { ThreadStartModal } from "components/thread/ThreadStartModal";
 import { SwipeToDeleteRow } from "components/ui/SwipeToDeleteRow";
 import { useAccountActive } from "hooks/account/useAccountActive";
 import type { Thread } from "lib/models/thread";
@@ -41,7 +39,7 @@ import { threadListPaletteForScheme } from "lib/theme/semanticUi";
 import type { TFunction } from "i18next";
 import { threadsRepo } from "repositories";
 import { formatLastMessageDate } from "utils/formatLastMessageDate";
-import { geminiUrlForThreadNavigationOrAlert } from "utils/geminiUrlNavigation";
+import { usePopupManager } from "react-popup-manager";
 
 const LONG_PRESS_MS = 450;
 
@@ -50,6 +48,7 @@ type ListPalette = ReturnType<typeof threadListPaletteForScheme>;
 export function ThreadListScreen() {
   const { t } = useTranslation();
   const navigation = useNavigation();
+  const popupManager = usePopupManager();
   const scheme = useColorScheme();
   const palette = useMemo(
     () => threadListPaletteForScheme(scheme),
@@ -61,9 +60,6 @@ export function ThreadListScreen() {
 
   const [selecting, setSelecting] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  /** Android only — iOS uses `Alert.prompt`. */
-  const [openUrlModal, setOpenUrlModal] = useState(false);
-  const [openUrlDraft, setOpenUrlDraft] = useState("");
   const [listRefreshing, setListRefreshing] = useState(false);
 
   const queryClient = useQueryClient();
@@ -116,44 +112,24 @@ export function ThreadListScreen() {
     openSwipeRef.current = null;
   }, []);
 
-  const pushOpenGeminiThread = useCallback((url: string) => {
-    router.push({
-      pathname: "/capsules/create",
-      params: { url },
-    } as unknown as Href);
-  }, []);
-
-  const openGeminiUrlModal = useCallback(() => {
-    if (Platform.OS === "ios") {
-      Alert.prompt(
-        t("threads.openUrlPromptTitle"),
-        t("threads.openUrlPromptMsg"),
-        [
-          { text: t("common.cancel"), style: "cancel" },
-          {
-            text: t("common.open"),
-            onPress: (value?: string) => {
-              const ok = geminiUrlForThreadNavigationOrAlert(value);
-              if (ok) pushOpenGeminiThread(ok);
-            },
-          },
-        ],
-        "plain-text",
-        "",
-        "url",
-      );
-      return;
-    }
-    setOpenUrlDraft("");
-    setOpenUrlModal(true);
-  }, [pushOpenGeminiThread, t]);
-
-  const submitOpenGeminiUrl = useCallback(() => {
-    const ok = geminiUrlForThreadNavigationOrAlert(openUrlDraft);
-    if (!ok) return;
-    setOpenUrlModal(false);
-    pushOpenGeminiThread(ok);
-  }, [openUrlDraft, pushOpenGeminiThread]);
+  const openThreadStartModal = useCallback(() => {
+    void (async () => {
+      const { response } = popupManager.open(ThreadStartModal, {});
+      const result = await response;
+      if (!result || "cancelled" in result) return;
+      if ("capsuleId" in result) {
+        router.push({
+          pathname: "/threads/view",
+          params: { id: result.capsuleId },
+        } as unknown as Href);
+        return;
+      }
+      router.push({
+        pathname: "/threads/view",
+        params: { url: result.url },
+      } as unknown as Href);
+    })();
+  }, [popupManager]);
 
   const enterSelectMode = useCallback((id: string) => {
     openSwipeRef.current?.close();
@@ -261,7 +237,7 @@ export function ThreadListScreen() {
           </HeaderButton>
         ) : (
           <HeaderButton
-            onPress={openGeminiUrlModal}
+            onPress={openThreadStartModal}
             accessibilityLabel={t("threads.a11yOpenGeminiUrl")}
           >
             <Ionicons
@@ -279,11 +255,11 @@ export function ThreadListScreen() {
     });
   }, [
     confirmDeleteIds,
-    openGeminiUrlModal,
     threads,
     exitSelectMode,
     headerTint,
     navigation,
+    openThreadStartModal,
     selecting,
     selectedIds,
     tint,
@@ -295,105 +271,6 @@ export function ThreadListScreen() {
 
   return (
     <View style={[styles.screen, { backgroundColor: palette.background }]}>
-      {Platform.OS === "android" ? (
-        <Modal
-          visible={openUrlModal}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setOpenUrlModal(false)}
-        >
-          <View style={styles.androidUrlBackdrop}>
-            <Pressable
-              style={StyleSheet.absoluteFill}
-              onPress={() => setOpenUrlModal(false)}
-              accessibilityLabel={t("common.dismiss")}
-            />
-            <KeyboardAvoidingView
-              behavior="padding"
-              style={styles.androidUrlOuter}
-            >
-              <View
-                style={[
-                  styles.androidUrlCard,
-                  {
-                    backgroundColor: palette.listRowSurface,
-                    borderColor: palette.separator,
-                  },
-                ]}
-              >
-                <Text
-                  style={[styles.androidUrlTitle, { color: palette.textPrimary }]}
-                >
-                  {t("threads.androidUrlTitle")}
-                </Text>
-                <Text
-                  style={[styles.androidUrlHint, { color: palette.textSecondary }]}
-                >
-                  {t("threads.androidUrlHint")}
-                </Text>
-                <TextInput
-                  value={openUrlDraft}
-                  onChangeText={setOpenUrlDraft}
-                  placeholder={t("threads.androidUrlPlaceholder")}
-                  placeholderTextColor={palette.textSecondary}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="url"
-                  returnKeyType="go"
-                  onSubmitEditing={submitOpenGeminiUrl}
-                  style={[
-                    styles.androidUrlInput,
-                    {
-                      color: palette.textPrimary,
-                      borderColor: palette.separator,
-                    },
-                  ]}
-                />
-                <View
-                  style={[
-                    styles.androidUrlFooter,
-                    { borderTopColor: palette.separator },
-                  ]}
-                >
-                  <Pressable
-                    onPress={() => setOpenUrlModal(false)}
-                    style={({ pressed }) => [
-                      styles.androidUrlActionBtn,
-                      pressed && { opacity: 0.55 },
-                    ]}
-                    accessibilityLabel={t("threads.close")}
-                  >
-                    <Text
-                      style={[
-                        styles.androidUrlActionLabel,
-                        { color: palette.textSecondary },
-                      ]}
-                    >
-                      {t("threads.close")}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={submitOpenGeminiUrl}
-                    style={({ pressed }) => [
-                      styles.androidUrlActionBtn,
-                      pressed && { opacity: 0.55 },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.androidUrlActionLabel,
-                        { color: tint, fontWeight: "600" },
-                      ]}
-                    >
-                      {t("common.open")}
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-            </KeyboardAvoidingView>
-          </View>
-        </Modal>
-      ) : null}
       <FlatList
         data={threads}
         keyExtractor={(item) => item.id}
@@ -576,67 +453,6 @@ function ThreadRow({
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-  },
-  androidUrlBackdrop: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 24,
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-  },
-  androidUrlOuter: {
-    width: "100%",
-    maxWidth: 400,
-    zIndex: 1,
-  },
-  androidUrlCard: {
-    borderRadius: 4,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 20,
-    paddingTop: 18,
-    paddingBottom: 4,
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-  },
-  androidUrlTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  androidUrlHint: {
-    fontSize: 14,
-    marginTop: 6,
-    lineHeight: 20,
-  },
-  androidUrlInput: {
-    marginTop: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-  },
-  androidUrlFooter: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    alignItems: "center",
-    marginTop: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    gap: 8,
-  },
-  androidUrlActionBtn: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    minWidth: 64,
-    alignItems: "center",
-  },
-  androidUrlActionLabel: {
-    fontSize: 15,
   },
   headerAction: {
     fontSize: 17,

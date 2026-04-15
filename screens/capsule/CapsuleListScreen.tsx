@@ -26,6 +26,7 @@ import { useTranslation } from "react-i18next";
 import { usePopupManager } from "react-popup-manager";
 import type { SwipeableMethods } from "react-native-gesture-handler/ReanimatedSwipeable";
 import { CapsuleAvatar } from "components/capsule/CapsuleAvatar";
+import { CapsuleListRow } from "components/capsule/CapsuleListRow";
 import { CategoryManageModal } from "components/capsule/CategoryManageModal";
 import {
   selectCapsuleUiPalette,
@@ -359,12 +360,13 @@ export function CapsuleListScreen() {
         )}
         renderItem={({ item }) => {
           const row = (
-            <CapsuleRow
+            <CapsuleListRow
               capsule={item}
               palette={palette}
               selecting={selecting}
               selected={selectedIds.includes(item.id)}
               tint={tint}
+              delayLongPressMs={LONG_PRESS_MS}
               onPress={() => {
                 const sup = suppressNextRowPressRef.current;
                 if (sup && sup.id === item.id && Date.now() < sup.untilMs) {
@@ -455,71 +457,6 @@ function CapsulesEmptyState({
   );
 }
 
-function CapsuleRow({
-  capsule,
-  palette,
-  selecting,
-  selected,
-  tint,
-  onPress,
-  onLongPress,
-}: {
-  capsule: Capsule;
-  palette: CapsuleListRowPalette;
-  selecting: boolean;
-  selected: boolean;
-  tint: ColorValue;
-  onPress: () => void;
-  onLongPress?: () => void;
-}) {
-  const description = capsule.description?.trim();
-
-  return (
-    <Pressable
-      onPress={onPress}
-      onLongPress={onLongPress}
-      delayLongPress={LONG_PRESS_MS}
-      style={({ pressed }) => [
-        styles.row,
-        { backgroundColor: palette.listRowSurface },
-        pressed && { backgroundColor: palette.rowPressed },
-      ]}
-    >
-      {selecting ? (
-        <View style={styles.selectMark}>
-          <Ionicons
-            name={selected ? "checkmark-circle" : "ellipse-outline"}
-            size={26}
-            color={selected ? tint : palette.textSecondary}
-          />
-        </View>
-      ) : null}
-      <CapsuleAvatar
-        capsuleId={capsule.id}
-        name={capsule.name}
-        emoji={capsule.avatarIcon}
-        size={52}
-      />
-      <View style={styles.rowText}>
-        <Text
-          style={[styles.name, { color: palette.textPrimary }]}
-          numberOfLines={1}
-        >
-          {capsule.name}
-        </Text>
-        {description ? (
-          <Text
-            style={[styles.subtitle, { color: palette.textSecondary }]}
-            numberOfLines={2}
-          >
-            {description}
-          </Text>
-        ) : null}
-      </View>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
@@ -573,33 +510,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 22,
   },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    minHeight: 72,
-  },
-  selectMark: {
-    width: 32,
-    marginRight: 4,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   separator: {
     height: StyleSheet.hairlineWidth,
-  },
-  rowText: {
-    flex: 1,
-    marginLeft: 12,
-    justifyContent: "center",
-  },
-  name: {
-    fontSize: 17,
-    fontWeight: "600",
-  },
-  subtitle: {
-    fontSize: 14,
-    marginTop: 2,
   },
 });
